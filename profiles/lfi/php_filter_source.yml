@@ -1,0 +1,20 @@
+id: lfi_php_filter_source
+domain: lfi
+description: Generate read-only PHP filter wrapper values for source-disclosure labs.
+
+sets:
+  wrapper:
+    catalog: lfi_php_filter_readonly
+  target:
+    catalog: lfi_php_source_targets
+
+patterns:
+  - "{wrapper}{target}"
+
+filters:
+  dedupe: true
+  max_length: 220
+  max_outputs: 100
+
+output:
+  file: output/lfi_php_filter_source.txt

@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "web-dict-composer"
+version = "0.3.0"
+description = "Find and compose curated dictionaries for authorized web security testing."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "web-dict-composer contributors" }]
+keywords = ["wordlists", "web-security", "pentesting", "fuzzing", "seclists"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Education",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+]
+dependencies = [
+  "PyYAML>=6.0",
+  "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "build>=1.2", "ruff>=0.6"]
+
+[project.scripts]
+web-dict-composer = "web_dict_composer.cli.app:main"
+
+[tool.setuptools.packages.find]
+include = ["web_dict_composer*"]
+
+[tool.setuptools.data-files]
+"share/web-dict-composer/catalog" = ["catalog/*.yml"]
+"share/web-dict-composer/sets/file_upload" = ["sets/file_upload/README.md"]
+"share/web-dict-composer/sets/file_upload/extensions" = ["sets/file_upload/extensions/*"]
+"share/web-dict-composer/sets/file_upload/filename" = ["sets/file_upload/filename/*"]
+"share/web-dict-composer/sets/file_upload/mime" = ["sets/file_upload/mime/*"]
+"share/web-dict-composer/sets/file_upload/multipart" = ["sets/file_upload/multipart/*"]
+"share/web-dict-composer/sets/lfi" = ["sets/lfi/README.md"]
+"share/web-dict-composer/sets/lfi/traversal" = ["sets/lfi/traversal/*"]
+"share/web-dict-composer/sets/lfi/targets" = ["sets/lfi/targets/*"]
+"share/web-dict-composer/sets/lfi/wrappers" = ["sets/lfi/wrappers/*"]
+"share/web-dict-composer/sets/lfi/suffixes" = ["sets/lfi/suffixes/*"]
+"share/web-dict-composer/profiles/file_upload" = ["profiles/file_upload/*.yml"]
+"share/web-dict-composer/profiles/lfi" = ["profiles/lfi/*.yml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

@@ -1,0 +1,5 @@
+file
+upload
+image
+avatar
+document

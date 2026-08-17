@@ -1,0 +1,3 @@
+Windows/win.ini
+Windows/System32/drivers/etc/hosts
+inetpub/wwwroot/web.config

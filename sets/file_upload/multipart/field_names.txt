@@ -1,0 +1,9 @@
+file
+upload
+image
+avatar
+document
+attachment
+media
+photo
+files[]

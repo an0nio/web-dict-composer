@@ -1,0 +1,31 @@
+id: file_upload_php_jpg_quick
+domain: file_upload
+description: Generate compact PHP handler filename candidates against a JPG allowlist.
+
+sets:
+  base:
+    inline: [shell]
+  dangerous:
+    catalog: file_upload_php_handler_candidates
+  allowed:
+    inline: [.jpg]
+  sep:
+    catalogs:
+      - file_upload_filename_separators_basic
+      - file_upload_filename_separators_encoded
+
+patterns:
+  - "{base}{dangerous}{allowed}"
+  - "{base}{allowed}{dangerous}"
+  - "{base}{dangerous}{sep}{allowed}"
+  - "{base}{allowed}{sep}{dangerous}"
+  - "{base}{sep}{dangerous}{allowed}"
+  - "{base}{allowed}{dangerous}{sep}"
+
+filters:
+  dedupe: true
+  max_length: 120
+  max_outputs: 5000
+
+output:
+  file: output/file_upload_php_jpg_quick.txt

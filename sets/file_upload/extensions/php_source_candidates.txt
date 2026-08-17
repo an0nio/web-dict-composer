@@ -1,0 +1,3 @@
+.phps
+.inc
+.phpt

@@ -1,0 +1,23 @@
+id: file_upload_svg_limited
+domain: file_upload
+description: Generate filenames for constrained SVG, XML, and browser-interpreted upload tests.
+
+sets:
+  base:
+    inline: [avatar, image, document]
+  extension:
+    catalog: file_upload_limited_upload_candidates
+  suffix:
+    inline: [.txt, .jpg]
+
+patterns:
+  - "{base}{extension}"
+  - "{base}{extension}{suffix}"
+
+filters:
+  dedupe: true
+  max_length: 80
+  max_outputs: 100
+
+output:
+  file: output/file_upload_svg_limited.txt

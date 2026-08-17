@@ -1,0 +1,29 @@
+id: file_upload_multistack_images
+domain: file_upload
+description: Compose a bounded PHP, ASP.NET, and JSP filename set with image allowlists.
+
+sets:
+  base:
+    inline: [shell, avatar]
+  dangerous:
+    catalogs:
+      - file_upload_php_handler_candidates
+      - file_upload_aspnet_handler_candidates
+      - file_upload_jsp_handler_candidates
+  allowed:
+    catalog: file_upload_allowed_image_extensions
+  sep:
+    inline: [".", "%00", "%20"]
+
+patterns:
+  - "{base}{dangerous}{allowed}"
+  - "{base}{dangerous}{sep}{allowed}"
+  - "{base}{allowed}{sep}{dangerous}"
+
+filters:
+  dedupe: true
+  max_length: 120
+  max_outputs: 5000
+
+output:
+  file: output/file_upload_multistack_images.txt

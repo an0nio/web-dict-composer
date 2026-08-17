@@ -1,0 +1,4 @@
+etc/passwd
+etc/hosts
+etc/hostname
+etc/os-release

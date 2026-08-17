@@ -1,0 +1,2 @@
+php://filter/convert.base64-encode/resource=
+php://filter/read=convert.base64-encode/resource=

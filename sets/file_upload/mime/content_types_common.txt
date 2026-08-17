@@ -1,0 +1,12 @@
+image/jpeg
+image/png
+image/gif
+image/webp
+image/avif
+image/svg+xml
+text/plain
+text/html
+application/xml
+application/pdf
+application/zip
+application/octet-stream

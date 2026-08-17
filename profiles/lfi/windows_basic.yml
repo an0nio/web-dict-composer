@@ -1,0 +1,32 @@
+id: lfi_windows_basic
+domain: lfi
+description: Generate bounded slash and backslash traversal forms for Windows read targets.
+
+sets:
+  traversal:
+    catalogs:
+      - lfi_traversal_steps_unix
+      - lfi_traversal_steps_windows
+    repeat:
+      min: 1
+      max: 6
+  target:
+    catalog: lfi_windows_targets_basic
+  drive:
+    inline: ["C:/"]
+
+patterns:
+  - "{traversal}{target}"
+  - "{drive}{target}"
+
+transforms:
+  - name: slash_to_backslash
+    include_original: true
+
+filters:
+  dedupe: true
+  max_length: 180
+  max_outputs: 500
+
+output:
+  file: output/lfi_windows_basic.txt

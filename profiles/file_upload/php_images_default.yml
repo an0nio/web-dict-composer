@@ -1,0 +1,31 @@
+id: file_upload_php_images_default
+domain: file_upload
+description: Compose current and legacy PHP candidates with common image allowlists.
+
+sets:
+  base:
+    catalog: file_upload_filename_bases_common
+  dangerous:
+    catalogs:
+      - file_upload_php_handler_candidates
+      - file_upload_php_legacy_candidates
+  allowed:
+    catalog: file_upload_allowed_image_extensions
+  sep:
+    catalogs:
+      - file_upload_filename_separators_basic
+      - file_upload_filename_separators_encoded
+
+patterns:
+  - "{base}{dangerous}{allowed}"
+  - "{base}{allowed}{dangerous}"
+  - "{base}{dangerous}{sep}{allowed}"
+  - "{base}{allowed}{sep}{dangerous}"
+
+filters:
+  dedupe: true
+  max_length: 120
+  max_outputs: 15000
+
+output:
+  file: output/file_upload_php_images_default.txt

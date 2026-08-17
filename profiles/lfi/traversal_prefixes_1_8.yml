@@ -1,0 +1,27 @@
+id: lfi_traversal_prefixes_1_8
+domain: lfi
+description: Generate only parent-directory prefixes at depths one through eight.
+
+sets:
+  step:
+    catalogs:
+      - lfi_traversal_steps_unix
+      - lfi_traversal_steps_windows
+      - lfi_traversal_steps_encoded
+      - lfi_traversal_steps_double_encoded
+
+patterns:
+  - "{step}"
+
+transforms:
+  - name: repeat
+    min: 1
+    max: 8
+
+filters:
+  dedupe: true
+  max_length: 200
+  max_outputs: 500
+
+output:
+  file: output/lfi_traversal_prefixes_1_8.txt

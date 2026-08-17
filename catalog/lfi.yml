@@ -1,0 +1,144 @@
+entries:
+  - id: lfi_traversal_steps_unix
+    name: Unix traversal steps
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/traversal/steps_unix.txt
+    tags: [lfi, path-traversal, backwards, unix, steps, atoms]
+    description: Atomic Unix-style parent-directory steps without pre-expanded depths.
+
+  - id: lfi_traversal_steps_windows
+    name: Windows traversal steps
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/traversal/steps_windows.txt
+    tags: [lfi, path-traversal, backwards, windows, steps, atoms]
+    description: Atomic Windows-style parent-directory steps without pre-expanded depths.
+
+  - id: lfi_traversal_steps_encoded
+    name: Encoded traversal steps
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/traversal/steps_encoded.txt
+    tags: [lfi, path-traversal, backwards, encoded, steps, atoms]
+    description: Single-encoded parent-directory steps kept separate from target paths.
+
+  - id: lfi_traversal_steps_double_encoded
+    name: Double-encoded traversal steps
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/traversal/steps_double_encoded.txt
+    tags: [lfi, path-traversal, backwards, double-encoded, steps, atoms]
+    description: Double-encoded traversal steps for explicitly justified decoding chains.
+
+  - id: lfi_traversal_steps_filter_bypass
+    name: Traversal filter-bypass steps
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/traversal/steps_filter_bypass.txt
+    tags: [lfi, path-traversal, backwards, filter-bypass, steps, atoms]
+    description: Small experimental set of non-recursive filter normalization forms.
+
+  - id: lfi_linux_targets_basic
+    name: Basic Linux read targets
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/targets/linux_basic.txt
+    tags: [lfi, linux, targets, files, atoms]
+    description: Recognizable low-impact Linux file-read targets stored without a leading slash.
+
+  - id: lfi_linux_targets_sensitive
+    name: Sensitive Linux read targets
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/targets/linux_sensitive.txt
+    tags: [lfi, linux, sensitive, targets, files, atoms]
+    description: Higher-sensitivity Linux and procfs targets excluded from basic profiles.
+
+  - id: lfi_windows_targets_basic
+    name: Basic Windows read targets
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/targets/windows_basic.txt
+    tags: [lfi, windows, targets, files, atoms]
+    description: Recognizable Windows file-read targets stored without a drive prefix.
+
+  - id: lfi_php_source_targets
+    name: Common PHP source targets
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/targets/php_source.txt
+    tags: [lfi, php, source, targets, files, atoms]
+    description: Compact application-relative PHP source target list.
+
+  - id: lfi_log_file_targets
+    name: Common web log targets
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/targets/log_files.txt
+    tags: [lfi, logs, apache, nginx, iis, targets, atoms]
+    description: Stack-specific web log paths whose deployment defaults remain configurable.
+
+  - id: lfi_php_filter_readonly
+    name: Read-only PHP filter wrappers
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/wrappers/php_filter_readonly.txt
+    tags: [lfi, php, wrappers, filter, source-disclosure, atoms]
+    description: Read-only PHP filter prefixes for controlled source-disclosure profiles.
+
+  - id: lfi_suffix_bypasses_experimental
+    name: Experimental LFI suffix bypasses
+    domain: lfi
+    kind: atom_set
+    source: local
+    path: sets/lfi/suffixes/suffix_bypasses.txt
+    tags: [lfi, suffixes, encoded, experimental, atoms]
+    description: Version- and parser-dependent suffix forms excluded from default profiles.
+
+  - id: seclists_lfi_jhaddix
+    name: SecLists LFI Jhaddix wordlist
+    domain: lfi
+    kind: external_wordlist
+    source: seclists
+    path: Fuzzing/LFI/LFI-Jhaddix.txt
+    tags: [lfi, path-traversal, linux, windows, payloads]
+    description: Ready-made LFI values for direct use or review, not atomic composition.
+
+  - id: seclists_lfi_linux_windows
+    name: SecLists combined Linux and Windows LFI wordlist
+    domain: lfi
+    kind: external_wordlist
+    source: seclists
+    path: Fuzzing/LFI/LFI-linux-and-windows_by-1N3@CrowdShield.txt
+    tags: [lfi, path-traversal, linux, windows, payloads]
+    description: Broad precomposed LFI wordlist intended for direct use.
+
+  - id: owasp_directory_traversal_testing
+    name: OWASP directory traversal testing guidance
+    domain: lfi
+    kind: reference
+    source: owasp
+    path: https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/05-Authorization_Testing/01-Testing_Directory_Traversal_File_Include
+    tags: [lfi, path-traversal, methodology, reference]
+    description: Testing methodology and contextual guidance; not a compositional input.
+
+  - id: php_supported_wrappers_reference
+    name: PHP supported wrappers reference
+    domain: lfi
+    kind: reference
+    source: php
+    path: https://www.php.net/wrappers
+    tags: [lfi, php, wrappers, reference]
+    description: Authoritative wrapper documentation used to review read-only profile inputs.

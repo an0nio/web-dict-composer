@@ -1,0 +1,6 @@
+.zip
+.tar
+.gz
+.tgz
+.7z
+.rar

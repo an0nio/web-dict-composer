@@ -1,0 +1,189 @@
+entries:
+  - id: file_upload_php_handler_candidates
+    name: PHP handler extension candidates
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/extensions/php_handler_candidates.txt
+    tags: [file-upload, php, dangerous, extensions, handlers, atoms]
+    description: Curated PHP-related handler extension candidates for filename composition.
+
+  - id: file_upload_php_legacy_candidates
+    name: Legacy PHP handler extension candidates
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/extensions/php_legacy_candidates.txt
+    tags: [file-upload, php, dangerous, extensions, legacy, handlers, atoms]
+    description: Historical and configuration-dependent PHP extension candidates.
+
+  - id: file_upload_php_source_candidates
+    name: PHP source and include extension candidates
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/extensions/php_source_candidates.txt
+    tags: [file-upload, php, dangerous, extensions, source, disclosure, atoms]
+    description: PHP-related source, include, and test extensions kept out of handler profiles.
+
+  - id: file_upload_aspnet_handler_candidates
+    name: ASP and ASP.NET handler extension candidates
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/extensions/aspnet_handler_candidates.txt
+    tags: [file-upload, asp, aspnet, iis, extensions, handlers, atoms]
+    description: Curated classic ASP and ASP.NET handler extension candidates.
+
+  - id: file_upload_jsp_handler_candidates
+    name: JSP handler extension candidates
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/extensions/jsp_handler_candidates.txt
+    tags: [file-upload, java, jsp, tomcat, extensions, handlers, atoms]
+    description: Curated JSP handler candidates with defaults separated from historical forms.
+
+  - id: file_upload_allowed_image_extensions
+    name: Common allowed image extensions
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/extensions/allowed_images.txt
+    tags: [file-upload, images, allowlist, extensions, atoms]
+    description: Small passive-image allowlist for filename composition.
+
+  - id: file_upload_allowed_document_extensions
+    name: Common allowed document extensions
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/extensions/allowed_documents.txt
+    tags: [file-upload, documents, allowlist, extensions, atoms]
+    description: Small document allowlist for upload validation exercises.
+
+  - id: file_upload_allowed_archive_extensions
+    name: Common allowed archive extensions
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/extensions/allowed_archives.txt
+    tags: [file-upload, archives, allowlist, extensions, atoms]
+    description: Small archive allowlist without archive contents or extraction payloads.
+
+  - id: file_upload_limited_upload_candidates
+    name: Limited upload extension candidates
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/extensions/limited_upload_candidates.txt
+    tags: [file-upload, svg, xml, html, limited-upload, extensions, atoms]
+    description: Browser-interpreted and structured document extensions for constrained profiles.
+
+  - id: file_upload_filename_bases_common
+    name: Common upload filename bases
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/filename/bases_common.txt
+    tags: [file-upload, filenames, bases, atoms]
+    description: Short neutral filename stems used by built-in composition profiles.
+
+  - id: file_upload_filename_separators_basic
+    name: Basic filename separators
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/filename/separators_basic.txt
+    tags: [file-upload, filenames, separators, normalization, atoms]
+    description: Literal filename separators with bounded, reviewable behavior assumptions.
+
+  - id: file_upload_filename_separators_encoded
+    name: Encoded filename separators
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/filename/separators_encoded.txt
+    tags: [file-upload, filenames, separators, encoded, normalization, atoms]
+    description: Encoded separator and control candidates kept separate from literal separators.
+
+  - id: file_upload_content_types_common
+    name: Common upload content types
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/mime/content_types_common.txt
+    tags: [file-upload, mime, content-type, headers, atoms]
+    description: Small curated set of upload-relevant media types.
+
+  - id: file_upload_content_types_images
+    name: Common image content types
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/mime/content_types_images.txt
+    tags: [file-upload, images, mime, content-type, headers, atoms]
+    description: Registered and commonly observed image media types for upload testing.
+
+  - id: file_upload_multipart_field_names
+    name: Common multipart upload field names
+    domain: file_upload
+    kind: atom_set
+    source: local
+    path: sets/file_upload/multipart/field_names.txt
+    tags: [file-upload, multipart, parameters, field-names, atoms]
+    description: Compact set of conventional multipart file field names.
+
+  - id: seclists_web_extensions
+    name: SecLists web extensions
+    domain: file_upload
+    kind: external_wordlist
+    source: seclists
+    path: Discovery/Web-Content/web-extensions.txt
+    tags: [file-upload, php, aspnet, jsp, extensions, discovery]
+    description: Generic extension discovery list for review or direct use, not profile composition.
+
+  - id: seclists_raft_small_extensions
+    name: SecLists RAFT small extensions
+    domain: file_upload
+    kind: external_wordlist
+    source: seclists
+    path: Discovery/Web-Content/raft-small-extensions.txt
+    tags: [file-upload, extensions, discovery, raft]
+    description: Frequency-derived extension wordlist containing non-atomic and noisy values.
+
+  - id: seclists_web_all_content_types
+    name: SecLists web content types
+    domain: file_upload
+    kind: external_wordlist
+    source: seclists
+    path: Discovery/Web-Content/web-all-content-types.txt
+    tags: [file-upload, mime, content-type, exhaustive]
+    description: Large media-type wordlist for direct inspection or controlled derivation.
+
+  - id: owasp_file_upload_testing
+    name: OWASP file upload testing guidance
+    domain: file_upload
+    kind: reference
+    source: owasp
+    path: https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/10-Business_Logic_Testing/08-Test_Upload_of_Unexpected_File_Types
+    tags: [file-upload, methodology, reference]
+    description: Testing methodology and validation context; not a compositional input.
+
+  - id: patt_upload_insecure_files
+    name: PayloadsAllTheThings upload reference
+    domain: file_upload
+    kind: reference
+    source: payloadsallthethings
+    path: https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/Upload%20Insecure%20Files
+    tags: [file-upload, php, extensions, bypass, payloads, reference]
+    description: Technique reference containing composed payloads that require manual review.
+
+  - id: fuzzdb_upload_attack_patterns
+    name: FuzzDB file upload reference
+    domain: file_upload
+    kind: reference
+    source: fuzzdb
+    path: https://github.com/fuzzdb-project/fuzzdb/tree/master/attack/file-upload
+    tags: [file-upload, payloads, fuzzdb, reference]
+    description: Legacy attack primitives and composed values; not an atom source.

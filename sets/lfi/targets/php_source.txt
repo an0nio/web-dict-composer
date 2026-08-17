@@ -1,0 +1,6 @@
+index.php
+config.php
+wp-config.php
+app/config.php
+config/database.php
+public/index.php

@@ -1,0 +1,4 @@
+etc/shadow
+proc/self/environ
+proc/self/cmdline
+proc/self/maps
