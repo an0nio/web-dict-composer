@@ -46,6 +46,13 @@ def _from_mapping(data: dict[str, Any], origin: Path) -> CatalogEntry:
     if missing:
         raise ComposerError(f"Catalog entry in {origin} is missing: {', '.join(missing)}")
 
+    entry_id = str(data["id"])
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", entry_id):
+        raise ComposerError(
+            f"Catalog entry ID must use lowercase letters, numbers, underscores, or hyphens: "
+            f"{entry_id!r}"
+        )
+
     kind = str(data["kind"])
     if kind not in ALLOWED_KINDS:
         raise ComposerError(
@@ -60,7 +67,7 @@ def _from_mapping(data: dict[str, Any], origin: Path) -> CatalogEntry:
     if not isinstance(tags, list):
         raise ComposerError(f"Catalog entry {data['id']!r} tags must be a list.")
     return CatalogEntry(
-        id=str(data["id"]),
+        id=entry_id,
         name=str(data["name"]),
         domain=domain,
         kind=kind,

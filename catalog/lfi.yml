@@ -44,6 +44,24 @@ entries:
     tags: [lfi, traversal, path-traversal, backwards, filter-bypass, steps, atoms]
     description: Small experimental set of non-recursive filter normalization forms.
 
+  - id: lfi_traversal_steps_all_linux
+    name: All Linux traversal steps
+    domain: lfi
+    kind: derived_set
+    source: local
+    path: sets/lfi/traversal/steps_all_linux.txt
+    tags: [lfi, traversal, path-traversal, backwards, linux, encoded, double-encoded, unicode, overlong-utf8, base64, no-percent, mixed-separators, legacy, seclists, jhaddix, filter-bypass, all, aggregate, mass-fuzzing, steps, atoms]
+    description: Broad Linux aggregate of reviewed traversal separators, including atomic ideas derived from SecLists LFI-Jhaddix.
+
+  - id: lfi_traversal_steps_all_windows
+    name: All Windows traversal steps
+    domain: lfi
+    kind: derived_set
+    source: local
+    path: sets/lfi/traversal/steps_all_windows.txt
+    tags: [lfi, traversal, path-traversal, backwards, windows, encoded, double-encoded, unicode, overlong-utf8, base64, no-percent, mixed-separators, legacy, seclists, jhaddix, filter-bypass, all, aggregate, mass-fuzzing, steps, atoms]
+    description: Broad Windows aggregate of reviewed slash and backslash traversal separators, including atomic ideas derived from SecLists LFI-Jhaddix.
+
   - id: lfi_linux_targets_basic
     name: Basic Linux read targets
     domain: lfi
@@ -71,6 +89,24 @@ entries:
     tags: [lfi, windows, targets, files, atoms]
     description: Recognizable Windows file-read targets stored without a drive prefix.
 
+  - id: lfi_linux_passwd_separator_variants
+    name: Linux passwd separator variants
+    domain: lfi
+    kind: generated_set
+    source: local
+    path: sets/lfi/targets/linux_passwd_separator_variants.txt
+    tags: [lfi, linux, passwd, targets, target-variants, separators, slash, encoded, double-encoded, unicode, legacy, bypass, generated]
+    description: Generated etc/passwd targets covering a bounded matrix of slash encodings and normalization bypasses.
+
+  - id: lfi_windows_win_ini_separator_dot_variants
+    name: Windows win.ini separator and dot variants
+    domain: lfi
+    kind: generated_set
+    source: local
+    path: sets/lfi/targets/windows_win_ini_separator_dot_variants.txt
+    tags: [lfi, windows, win-ini, targets, target-variants, separators, slash, backslash, dots, encoded, double-encoded, unicode, legacy, bypass, cartesian, generated]
+    description: Cartesian Windows/win.ini target matrix combining reviewed path-separator and extension-dot representations.
+
   - id: lfi_php_source_targets
     name: Common PHP source targets
     domain: lfi
@@ -79,6 +115,15 @@ entries:
     path: sets/lfi/targets/php_source.txt
     tags: [lfi, php, source, targets, files, atoms]
     description: Compact application-relative PHP source target list.
+
+  - id: lfi_php_index_dot_variants
+    name: PHP index dot variants
+    domain: lfi
+    kind: generated_set
+    source: local
+    path: sets/lfi/targets/php_index_dot_variants.txt
+    tags: [lfi, php, index, source, targets, target-variants, dots, extensions, encoded, double-encoded, unicode, legacy, bypass, generated]
+    description: Generated index.php targets covering a bounded matrix of extension-dot representations.
 
   - id: lfi_log_file_targets
     name: Common web log targets

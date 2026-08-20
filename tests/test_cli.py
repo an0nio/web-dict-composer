@@ -6,14 +6,21 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from web_dict_composer.catalog.service import get_entry
 from web_dict_composer.cli.app import (
-    _composable_entries,
-    _filter_composable_entries,
+    _filter_catalog_entries,
+    _interactive_catalog_search,
     _parse_number_selection,
     _pattern_options,
+    _prepare_wizard_entry,
+    _preview_wizard_entry,
     _remaining_tags,
     _replacement_candidates,
+    _wizard_entry_target,
+    _wizard_entries,
+    console,
 )
 from web_dict_composer.core.profile import load_profile
 
@@ -112,9 +119,9 @@ class CliTests(unittest.TestCase):
         )
         self.assertNotIn("file_upload_filename_bases_common", allowed)
 
-    def test_wizard_filters_composable_dictionaries_by_accumulated_terms(self) -> None:
-        entries = _composable_entries()
-        matches = _filter_composable_entries(
+    def test_wizard_filters_dictionaries_by_accumulated_terms(self) -> None:
+        entries = _wizard_entries()
+        matches = _filter_catalog_entries(
             entries,
             ["file-upload", "dangerous", "php"],
         )
@@ -127,6 +134,83 @@ class CliTests(unittest.TestCase):
             },
         )
         self.assertNotIn("file-upload", _remaining_tags(matches[0], ["file-upload"]))
+
+    def test_wizard_includes_external_wordlists_but_never_references(self) -> None:
+        entries = _wizard_entries("file_upload")
+        kinds = {entry.kind for entry in entries}
+        ids = {entry.id for entry in entries}
+        self.assertIn("external_wordlist", kinds)
+        self.assertIn("seclists_web_all_content_types", ids)
+        self.assertNotIn("reference", kinds)
+        self.assertNotIn("owasp_file_upload_testing", ids)
+
+    def test_wizard_finds_unregistered_seclists_when_external_is_selected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            seclists = base / "SecLists"
+            target = seclists / "Discovery" / "Web-Content" / "web-extensions.txt"
+            target.parent.mkdir(parents=True)
+            (seclists / "Fuzzing").mkdir()
+            (seclists / "README.md").write_text("SecLists fixture\n", encoding="utf-8")
+            target.write_text("php\nhtml\n", encoding="utf-8")
+            environment = {
+                "SECLISTS_PATH": str(seclists),
+                "XDG_CONFIG_HOME": str(base / "config"),
+            }
+            with patch.dict(os.environ, environment, clear=False):
+                self.assertTrue(_prepare_wizard_entry(get_entry("seclists_web_extensions")))
+
+    def test_wizard_can_preview_by_number_or_id_without_selecting(self) -> None:
+        entry = get_entry("file_upload_allowed_image_extensions")
+        pool = _wizard_entries("file_upload")
+        self.assertEqual(_wizard_entry_target("1", pool, [entry]), entry)
+        self.assertEqual(_wizard_entry_target(entry.id, pool, []), entry)
+
+        with patch("web_dict_composer.cli.app.pydoc.pager") as mocked_pager:
+            with console.capture() as capture:
+                self.assertTrue(_preview_wizard_entry(entry))
+        output = capture.get()
+        mocked_pager.assert_called_once()
+        pager_content = mocked_pager.call_args.args[0]
+        self.assertIn("Dictionary: file_upload_allowed_image_extensions", pager_content)
+        self.assertIn("Usable entries: 6", pager_content)
+        self.assertIn("Navigation:", pager_content)
+        self.assertIn(".jpg", pager_content)
+        self.assertIn(".avif", pager_content)
+        self.assertIn("Pager closed; the dictionary has not been selected.", output)
+
+    def test_parameterless_search_requires_a_terminal_in_scripts(self) -> None:
+        result = self.run_cli("dicts", "search")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Interactive search needs a terminal", result.stderr)
+
+    def test_interactive_search_accumulates_tags_and_searches_exact_names(self) -> None:
+        with patch(
+            "web_dict_composer.cli.app.Prompt.ask",
+            side_effect=["file-upload", "content-type", ":quit"],
+        ):
+            with console.capture() as capture:
+                self.assertEqual(
+                    _interactive_catalog_search(limit=50, include_references=False),
+                    0,
+                )
+        tag_output = capture.get()
+        self.assertIn("Active filters: file-upload + content-type", tag_output)
+        self.assertIn("file_upload_content_types_common", tag_output)
+        self.assertIn("seclists_web_all_content_types", tag_output)
+
+        with patch(
+            "web_dict_composer.cli.app.Prompt.ask",
+            side_effect=["Common allowed image extensions", ":quit"],
+        ):
+            with console.capture() as capture:
+                self.assertEqual(
+                    _interactive_catalog_search(limit=50, include_references=False),
+                    0,
+                )
+        name_output = capture.get()
+        self.assertIn("file_upload_allowed_image_extensions", name_output)
+        self.assertNotIn("owasp_file_upload_testing", name_output)
 
     def test_wizard_generates_orderings_and_parses_friendly_selection(self) -> None:
         aliases = ["base", "dangerous", "allowed"]

@@ -19,7 +19,7 @@ debe revisarse cuando se actualiza una fuente registrada.
 
 Tres representaciones son posibles:
 
-1. `external_wordlist`: se muestra y usa directamente fuera del compositor.
+1. `external_wordlist`: se usa directamente o se selecciona expresamente desde el wizard.
 2. `derived_set`: un subconjunto local filtrado, normalizado y revisado.
 3. `reference`: sirve para revisión humana.
 
@@ -27,8 +27,22 @@ Por ejemplo, `Discovery/Web-Content/web-all-content-types.txt` se cataloga como 
 los content types usados por perfiles viven en sets locales pequeños. Lo mismo ocurre con
 `web-extensions.txt`: sirve para discovery y contraste, no como dimensión de un perfil quick.
 
-El proyecto no descarga contenido, no fija una copia de SecLists y no asume que cualquier `.txt`
-sea componible.
+`Fuzzing/LFI/LFI-Jhaddix.txt` se mantiene como `external_wordlist`, pero sus ideas de separadores
+pueden incorporarse a sets `derived_set` tras revisarlas y descomponerlas en un solo átomo. No se
+copian targets, profundidades expandidas, terminadores ni payloads completos.
+
+Los sets derivados son snapshots reproducibles y no se sincronizan automáticamente cuando cambia
+la fuente externa. Una nueva versión upstream exige revisar las diferencias y actualizar a la vez
+el set, su ficha bajo `docs/set_reviews/` y sus pruebas de contenido.
+
+Los targets `etc/passwd`, `Windows/win.ini` e `index.php` también pueden publicarse como
+`generated_set` cuando una matriz pequeña y documentada sustituye exclusivamente sus separadores o
+el punto de extensión. La matriz se conserva localmente para que el resultado sea reproducible.
+
+El wizard busca SecLists en rutas locales antes de pedir que se registre manualmente. No descarga
+SecLists ni asume que cualquier `.txt` sea componible. Para otras entradas `external_wordlist`, una
+URL directa puede descargarse tras confirmación; se rechaza HTML, se limita a 50 MiB, se exige texto
+UTF-8 y se conserva en la caché XDG. Las entradas `reference` nunca se descargan.
 
 ## Criterios de un set local
 

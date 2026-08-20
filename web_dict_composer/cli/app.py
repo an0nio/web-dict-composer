@@ -4,6 +4,7 @@ import argparse
 import itertools
 import json
 import os
+import pydoc
 import re
 import sys
 from pathlib import Path
@@ -27,8 +28,17 @@ from web_dict_composer.catalog.service import (
 from web_dict_composer.core.artifacts import build_artifacts
 from web_dict_composer.core.engine import Estimate, estimate_profile
 from web_dict_composer.core.errors import ComposerError
-from web_dict_composer.core.profile import Profile, load_profile
+from web_dict_composer.core.profile import (
+    Profile,
+    load_catalog_entry_values,
+    load_local_dictionary_file,
+    load_profile,
+)
 from web_dict_composer.core.resources import ACTIVE_DOMAINS, profile_files
+from web_dict_composer.sources.external import (
+    cached_external_wordlist,
+    download_external_wordlist,
+)
 from web_dict_composer.sources.manager import add_source, load_sources, scan_seclists
 
 
@@ -45,6 +55,8 @@ THEME = Theme(
         "source.external": "bold magenta",
     }
 )
+
+WIZARD_INPUT_KINDS = COMPOSABLE_KINDS | {"external_wordlist"}
 
 
 def _console(*, stderr: bool = False) -> Console:
@@ -75,7 +87,10 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="web-dict-composer",
         description="Find and compose curated dictionaries for authorized web security testing.",
-        epilog="It generates local files only: no requests, scanning, or exploitation.",
+        epilog=(
+            "It never targets web applications; network access is limited to confirmed "
+            "catalog wordlist downloads."
+        ),
         **common,
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -104,9 +119,15 @@ def _parser() -> argparse.ArgumentParser:
     listing.add_argument("--tag")
     listing.add_argument("--include-references", action="store_true")
     search = dict_commands.add_parser(
-        "search", help="Search the curated catalog.", **common
+        "search",
+        help="Search the curated catalog; omit terms for interactive mode.",
+        **common,
     )
-    search.add_argument("query", nargs="+", help="Terms such as: file-upload php extensions")
+    search.add_argument(
+        "query",
+        nargs="*",
+        help="Optional terms such as: file-upload php extensions",
+    )
     search.add_argument("--limit", type=int, default=50)
     search.add_argument("--include-references", action="store_true")
     show = dict_commands.add_parser("show", help="Show catalog metadata.", **common)
@@ -297,6 +318,24 @@ def _catalog_table(entries: list[CatalogEntry], *, search: bool = False) -> Tabl
     return table
 
 
+def _dictionary_panel(entry: CatalogEntry) -> Panel:
+    resolved = resolve_entry(entry)
+    body = Table(show_header=False, box=None, padding=(0, 2))
+    for label, value in (
+        ("ID", entry.id),
+        ("Name", entry.name),
+        ("Domain", entry.domain),
+        ("Kind", entry.kind),
+        ("Source", entry.source),
+        ("Path", entry.path),
+        ("Resolved", resolved or "not available locally"),
+        ("Tags", ", ".join(entry.tags)),
+        ("Description", entry.description),
+    ):
+        body.add_row(Text(label, style="muted"), str(value))
+    return Panel(body, title="[brand]Dictionary[/brand]", border_style="cyan")
+
+
 def _dicts_command(args: argparse.Namespace) -> int:
     if args.dicts_command == "list":
         entries = list_entries(
@@ -311,6 +350,18 @@ def _dicts_command(args: argparse.Namespace) -> int:
             return 1
         return 0
     if args.dicts_command == "search":
+        if args.limit <= 0:
+            raise ComposerError("--limit must be a positive number.")
+        if not args.query:
+            if not console.is_terminal:
+                raise ComposerError(
+                    "Interactive search needs a terminal. Provide search terms after "
+                    "`dicts search` when using scripts."
+                )
+            return _interactive_catalog_search(
+                limit=args.limit,
+                include_references=args.include_references,
+            )
         entries = search_catalog(
             " ".join(args.query),
             limit=args.limit,
@@ -323,21 +374,7 @@ def _dicts_command(args: argparse.Namespace) -> int:
         return 0
     if args.dicts_command == "show":
         entry = get_entry(args.dictionary_id)
-        resolved = resolve_entry(entry)
-        body = Table(show_header=False, box=None, padding=(0, 2))
-        for label, value in (
-            ("ID", entry.id),
-            ("Name", entry.name),
-            ("Domain", entry.domain),
-            ("Kind", entry.kind),
-            ("Source", entry.source),
-            ("Path", entry.path),
-            ("Resolved", resolved or "not available locally"),
-            ("Tags", ", ".join(entry.tags)),
-            ("Description", entry.description),
-        ):
-            body.add_row(Text(label, style="muted"), str(value))
-        console.print(Panel(body, title="[brand]Dictionary[/brand]", border_style="cyan"))
+        console.print(_dictionary_panel(entry))
         return 0
     if args.dicts_command == "path":
         entry = get_entry(args.dictionary_id)
@@ -493,18 +530,12 @@ def _choose_catalog_set(profile: Profile) -> None:
         replaceable = _replaceable_sets(profile)
 
 
-def _composable_entries(domain: str | None = None) -> list[CatalogEntry]:
+def _wizard_entries(domain: str | None = None) -> list[CatalogEntry]:
     entries = list_entries(domain=domain)
-    return [
-        entry
-        for entry in entries
-        if entry.kind in COMPOSABLE_KINDS
-        and not entry.path.startswith(("https://", "http://"))
-        and resolve_entry(entry)
-    ]
+    return [entry for entry in entries if entry.kind in WIZARD_INPUT_KINDS]
 
 
-def _filter_composable_entries(
+def _filter_catalog_entries(
     entries: list[CatalogEntry], terms: list[str]
 ) -> list[CatalogEntry]:
     normalized = [term.casefold() for term in terms if term.strip()]
@@ -559,6 +590,31 @@ def _print_tag_summary(entries: list[CatalogEntry], terms: list[str] | None = No
 def _wizard_dictionary_table(
     entries: list[CatalogEntry], terms: list[str], *, show_domain: bool
 ) -> Table:
+    if console.width < 100:
+        table = Table(
+            title=f"Matching dictionaries ({len(entries)})",
+            header_style="bold bright_cyan",
+            show_lines=True,
+        )
+        table.add_column("#", justify="right", style="accent", no_wrap=True)
+        table.add_column("Dictionary", overflow="fold")
+        for number, entry in enumerate(entries, 1):
+            details = Text()
+            details.append(entry.id, style="cyan")
+            if show_domain:
+                details.append("\nDomain: ", style="muted")
+                details.append(entry.domain, style="magenta")
+            details.append("\nKind: ", style="muted")
+            details.append(entry.kind)
+            details.append("\nAvailability: ", style="muted")
+            details.append(_wizard_entry_availability(entry))
+            details.append("\nDescription: ", style="muted")
+            details.append(entry.description)
+            details.append("\nRemaining tags: ", style="muted")
+            details.append(", ".join(_remaining_tags(entry, terms)) or "—")
+            table.add_row(str(number), details)
+        return table
+
     table = Table(
         title=f"Matching dictionaries ({len(entries)})",
         header_style="bold bright_cyan",
@@ -568,15 +624,230 @@ def _wizard_dictionary_table(
     table.add_column("ID", style="cyan", overflow="fold")
     if show_domain:
         table.add_column("Domain", style="magenta", no_wrap=True)
+    table.add_column("Kind", no_wrap=True)
+    table.add_column("Availability", no_wrap=True)
     table.add_column("Description", overflow="fold")
     table.add_column("Remaining tags", overflow="fold")
     for number, entry in enumerate(entries, 1):
         row = [str(number), entry.id]
         if show_domain:
             row.append(entry.domain)
+        row.extend((entry.kind, _wizard_entry_availability(entry)))
         row.extend((entry.description, ", ".join(_remaining_tags(entry, terms)) or "—"))
         table.add_row(*row)
     return table
+
+
+def _wizard_entry_availability(entry: CatalogEntry) -> str:
+    if entry.kind == "reference":
+        return "reference"
+    if entry.path.startswith(("https://", "http://")):
+        return "cached" if cached_external_wordlist(entry) else "download"
+    return "ready" if resolve_entry(entry) else "locate"
+
+
+def _prepare_wizard_entry(entry: CatalogEntry) -> bool:
+    if entry.path.startswith(("https://", "http://")):
+        cached = cached_external_wordlist(entry)
+        if cached:
+            return True
+        if not Confirm.ask(
+            f"Download external wordlist '{entry.id}' from {entry.path}?",
+            default=True,
+        ):
+            return False
+        try:
+            with console.status("[brand]Downloading external wordlist…[/brand]"):
+                downloaded = download_external_wordlist(entry)
+        except ComposerError as exc:
+            console.print(f"[warning]{exc}[/warning]")
+            return False
+        console.print(f"[success]Downloaded[/success] {entry.id} → {downloaded}")
+        return True
+
+    resolved = resolve_entry(entry)
+    if not resolved and entry.source.casefold() == "seclists":
+        console.print("[muted]SecLists is not registered; searching common local paths…[/muted]")
+        with console.status("[brand]Looking for SecLists…[/brand]"):
+            scan_seclists(persist=True)
+        resolved = resolve_entry(entry)
+        if resolved:
+            console.print(f"[success]Found[/success] {resolved}")
+    if resolved:
+        return True
+
+    console.print(
+        f"[warning]'{entry.id}' is not available locally. Register its source with "
+        f"`web-dict-composer sources add {entry.source} PATH`.[/warning]"
+    )
+    return False
+
+
+def _wizard_entry_target(
+    reference: str,
+    pool: list[CatalogEntry],
+    visible: list[CatalogEntry],
+) -> CatalogEntry | None:
+    normalized = reference.strip().casefold()
+    if normalized.isdigit() and visible:
+        number = int(normalized)
+        return visible[number - 1] if 1 <= number <= len(visible) else None
+    for entry in pool:
+        if normalized in {entry.id.casefold(), entry.name.casefold()}:
+            return entry
+    return None
+
+
+def _safe_preview_value(value: str) -> str:
+    return "".join(
+        character if character.isprintable() else f"\\x{ord(character):02x}"
+        for character in value
+    )
+
+
+def _dictionary_pager_text(entry: CatalogEntry, values: tuple[str, ...]) -> str:
+    width = 80
+    header = (
+        f"Dictionary: {entry.id}",
+        f"Name: {entry.name}",
+        f"Domain: {entry.domain}",
+        f"Kind: {entry.kind}",
+        f"Source: {entry.source}",
+        f"Catalog path: {entry.path}",
+        f"Tags: {', '.join(entry.tags)}",
+        f"Description: {entry.description}",
+        f"Usable entries: {len(values):,}",
+        "Navigation: arrows/Page Up/Page Down · / search · q quit",
+        "─" * width,
+        "",
+    )
+    content = (*header, *(_safe_preview_value(value) for value in values))
+    return "\n".join(content) + "\n"
+
+
+def _preview_wizard_entry(entry: CatalogEntry) -> bool:
+    if not _prepare_wizard_entry(entry):
+        return False
+    try:
+        values = load_catalog_entry_values(entry)
+    except ComposerError as exc:
+        console.print(f"[warning]{exc}[/warning]")
+        return False
+
+    console.print(
+        f"[brand]Opening {entry.id} in the pager…[/brand] "
+        "[muted]Use / to search and q to return.[/muted]"
+    )
+    pydoc.pager(_dictionary_pager_text(entry, values), title=entry.id)
+    console.print("[muted]Pager closed; the dictionary has not been selected.[/muted]")
+    return True
+
+
+def _print_interactive_search_results(
+    matches: list[CatalogEntry],
+    filters: list[str],
+    limit: int,
+) -> list[CatalogEntry]:
+    visible = matches[:limit]
+    if filters:
+        console.print(f"[muted]Active filters: {' + '.join(filters)}[/muted]")
+    else:
+        console.print("[muted]No active filters.[/muted]")
+    console.print(_wizard_dictionary_table(visible, filters, show_domain=True))
+    if len(matches) > limit:
+        console.print(
+            f"[muted]Showing {limit} of {len(matches)} matches. Refine the filters or increase "
+            "--limit.[/muted]"
+        )
+    return visible
+
+
+def _interactive_catalog_search(*, limit: int, include_references: bool) -> int:
+    pool = list_entries(include_references=include_references)
+    filters: list[str] = []
+    visible: list[CatalogEntry] = []
+    console.print(
+        Panel.fit(
+            "[brand]Interactive dictionary search[/brand]\n"
+            "[muted]Add tags or name terms progressively; nothing is selected or built.[/muted]",
+            border_style="bright_cyan",
+        )
+    )
+    _print_tag_summary(pool)
+    console.print(
+        "Commands: [accent]:show N|ID[/accent], [accent]:back[/accent], "
+        "[accent]:reset[/accent], [accent]:all[/accent], [accent]:tags[/accent], "
+        "[accent]:quit[/accent]."
+    )
+
+    while True:
+        raw = Prompt.ask("Search term or command").strip()
+        command = raw.casefold()
+        if command in {":quit", ":q"}:
+            console.print("[muted]Search closed.[/muted]")
+            return 0
+        if command == ":show" or command.startswith(":show "):
+            reference = raw[len(":show") :].strip()
+            entry = _wizard_entry_target(reference, pool, visible)
+            if not reference:
+                console.print("[warning]Use `:show NUMBER`, `:show ID`, or `:show NAME`.[/warning]")
+            elif not entry:
+                console.print(
+                    "[warning]Dictionary not found. Use a displayed number or an exact ID/name."
+                    "[/warning]"
+                )
+            elif entry.kind == "reference":
+                console.print(_dictionary_panel(entry))
+            else:
+                _preview_wizard_entry(entry)
+            continue
+        if command == ":reset":
+            filters.clear()
+            visible = []
+            _print_tag_summary(pool)
+            continue
+        if command == ":back":
+            if filters:
+                filters.pop()
+            if filters:
+                matches = _filter_catalog_entries(pool, filters)
+                visible = _print_interactive_search_results(matches, filters, limit)
+            else:
+                visible = []
+                _print_tag_summary(pool)
+            continue
+        if command == ":all":
+            filters.clear()
+            visible = _print_interactive_search_results(pool, filters, limit)
+            continue
+        if command == ":tags":
+            _print_tag_summary(visible or pool, filters)
+            continue
+
+        exact = [
+            entry
+            for entry in pool
+            if command in {entry.id.casefold(), entry.name.casefold()}
+        ]
+        if len(exact) == 1:
+            filters = [exact[0].id]
+            visible = _print_interactive_search_results(exact, filters, limit)
+            continue
+
+        new_terms = re.findall(r"[a-z0-9]+(?:[-_][a-z0-9]+)*", command)
+        if not new_terms:
+            console.print("[warning]Enter a tag, name term, ID, or command.[/warning]")
+            continue
+        proposed = filters + [term for term in new_terms if term not in filters]
+        matches = _filter_catalog_entries(pool, proposed)
+        if not matches:
+            console.print(
+                "[warning]No dictionaries match those filters; the previous search was kept."
+                "[/warning]"
+            )
+            continue
+        filters = proposed
+        visible = _print_interactive_search_results(matches, filters, limit)
 
 
 def _custom_dictionary_values() -> list[str]:
@@ -599,12 +870,36 @@ def _custom_dictionary_values() -> list[str]:
             values.append(value)
 
 
+def _wizard_local_file(
+    reference: str,
+) -> tuple[Path, tuple[str, ...]] | None:
+    path_reference = reference.strip()
+    if not path_reference:
+        path_reference = Prompt.ask("Dictionary file path").strip()
+    try:
+        path, values = load_local_dictionary_file(path_reference)
+    except ComposerError as exc:
+        console.print(f"[warning]{exc}[/warning]")
+        return None
+    console.print(
+        f"[success]Readable dictionary[/success] {path} "
+        f"[muted]({len(values):,} usable entries)[/muted]"
+    )
+    if not Confirm.ask("Use this local file as a dictionary?", default=True):
+        return None
+    return path, values
+
+
 def _select_wizard_dictionary(
     number: int, total: int, domain: str | None
-) -> tuple[CatalogEntry | None, list[str] | None]:
-    pool = _composable_entries(domain)
+) -> tuple[
+    CatalogEntry | None,
+    list[str] | None,
+    tuple[Path, tuple[str, ...]] | None,
+]:
+    pool = _wizard_entries(domain)
     if not pool:
-        raise ComposerError("No locally available composable dictionaries were found.")
+        raise ComposerError("No selectable dictionaries were found in the catalog.")
 
     filters: list[str] = []
     visible: list[CatalogEntry] = []
@@ -614,15 +909,34 @@ def _select_wizard_dictionary(
     _print_tag_summary(pool)
     console.print(
         "Type tags to narrow the results, a known ID/name to select it, or a command: "
-        "[accent]:custom[/accent], [accent]:all[/accent], [accent]:reset[/accent], "
-        "[accent]:tags[/accent]."
+        "[accent]:show N|ID[/accent], "
+        "[accent]:file PATH[/accent], [accent]:custom[/accent], [accent]:all[/accent], "
+        "[accent]:reset[/accent], [accent]:tags[/accent]."
     )
 
     while True:
         raw = Prompt.ask("Tag, dictionary, or result number").strip()
         command = raw.casefold()
+        if command == ":show" or command.startswith(":show "):
+            reference = raw[len(":show") :].strip()
+            entry = _wizard_entry_target(reference, pool, visible)
+            if not reference:
+                console.print("[warning]Use `:show NUMBER`, `:show ID`, or `:show NAME`.[/warning]")
+            elif not entry:
+                console.print(
+                    "[warning]Dictionary not found. Use a displayed number or an exact ID/name."
+                    "[/warning]"
+                )
+            else:
+                _preview_wizard_entry(entry)
+            continue
+        if command == ":file" or command.startswith(":file "):
+            local_file = _wizard_local_file(raw[len(":file") :])
+            if local_file:
+                return None, None, local_file
+            continue
         if command == ":custom":
-            return None, _custom_dictionary_values()
+            return None, _custom_dictionary_values(), None
         if command == ":reset":
             filters.clear()
             visible = []
@@ -645,12 +959,17 @@ def _select_wizard_dictionary(
             if command in {entry.id.casefold(), entry.name.casefold()}
         ]
         if len(exact) == 1:
-            return exact[0], None
+            if _prepare_wizard_entry(exact[0]):
+                return exact[0], None, None
+            continue
 
         if raw.isdigit() and visible:
             selected = int(raw)
             if 1 <= selected <= len(visible):
-                return visible[selected - 1], None
+                entry = visible[selected - 1]
+                if _prepare_wizard_entry(entry):
+                    return entry, None, None
+                continue
             console.print("[warning]That result number is outside the displayed range.[/warning]")
             continue
 
@@ -659,7 +978,7 @@ def _select_wizard_dictionary(
             console.print("[warning]Enter a tag, name, ID, or command.[/warning]")
             continue
         proposed = filters + [term for term in new_terms if term not in filters]
-        matches = _filter_composable_entries(pool, proposed)
+        matches = _filter_catalog_entries(pool, proposed)
         if not matches:
             console.print(
                 "[warning]No dictionaries match those filters; the previous selection "
@@ -672,7 +991,12 @@ def _select_wizard_dictionary(
         console.print(_wizard_dictionary_table(visible, filters, show_domain=domain is None))
 
 
-def _suggest_alias(entry: CatalogEntry | None, number: int, used: set[str]) -> str:
+def _suggest_alias(
+    entry: CatalogEntry | None,
+    number: int,
+    used: set[str],
+    local_path: Path | None = None,
+) -> str:
     if entry:
         tags = {tag.casefold() for tag in entry.tags}
         suggestions = (
@@ -688,11 +1012,20 @@ def _suggest_alias(entry: CatalogEntry | None, number: int, used: set[str]) -> s
         for tag, alias in suggestions:
             if tag in tags and alias not in used:
                 return alias
+    if local_path:
+        alias = re.sub(r"[^a-z0-9_]+", "_", local_path.stem.casefold()).strip("_")
+        if alias and not alias[0].isdigit() and alias not in used:
+            return alias
     return f"set{number}"
 
 
-def _prompt_alias(entry: CatalogEntry | None, number: int, used: set[str]) -> str:
-    default = _suggest_alias(entry, number, used)
+def _prompt_alias(
+    entry: CatalogEntry | None,
+    number: int,
+    used: set[str],
+    local_path: Path | None = None,
+) -> str:
+    default = _suggest_alias(entry, number, used, local_path)
     while True:
         alias = Prompt.ask(
             "Short placeholder name used in patterns",
@@ -783,8 +1116,8 @@ def _wizard() -> int:
         )
     _banner()
     console.print(
-        "[muted]Build a custom composition from catalog dictionaries or pasted values. "
-        "Up to four inputs keeps every ordering easy to review.[/muted]\n"
+        "[muted]Build a custom composition from catalog dictionaries, local files, or "
+        "pasted values. Up to four inputs keeps every ordering easy to review.[/muted]\n"
     )
     count = IntPrompt.ask(
         "How many dictionaries do you want to combine?",
@@ -795,17 +1128,26 @@ def _wizard() -> int:
     domain: str | None = None
     used_aliases: set[str] = set()
     sets_spec: dict[str, dict[str, object]] = {}
+    runtime_files: dict[str, Path] = {}
     selected_rows: list[tuple[str, str, str]] = []
     for number in range(1, count + 1):
-        entry, custom_values = _select_wizard_dictionary(number, count, domain)
+        entry, custom_values, local_file = _select_wizard_dictionary(number, count, domain)
         if entry and domain is None:
             domain = entry.domain
             console.print(f"[success]Composition domain set to {domain}.[/success]")
-        alias = _prompt_alias(entry, number, used_aliases)
+        local_path = local_file[0] if local_file else None
+        alias = _prompt_alias(entry, number, used_aliases, local_path)
         used_aliases.add(alias)
         if entry:
             sets_spec[alias] = {"catalog": entry.id}
             selected_rows.append((alias, entry.id, entry.description))
+        elif local_file:
+            path, values = local_file
+            sets_spec[alias] = {"file": str(path)}
+            runtime_files[alias] = path
+            selected_rows.append(
+                (alias, str(path), f"{len(values):,} values from a local file")
+            )
         else:
             values = custom_values or []
             sets_spec[alias] = {"inline": values}
@@ -848,6 +1190,7 @@ def _wizard() -> int:
         patterns=patterns,
         filters={"dedupe": True, "max_length": 240, "max_outputs": max_outputs},
         output={"file": f"output/{profile_id}.txt"},
+        runtime_files=runtime_files,
     )
 
     estimate = estimate_profile(profile)

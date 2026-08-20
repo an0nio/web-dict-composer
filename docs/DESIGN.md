@@ -21,12 +21,12 @@ El producto se concentra exclusivamente en File Upload y LFI / Path Traversal.
 | `atom_set` | Valores limpios con una única función semántica | Sí |
 | `derived_set` | Átomos filtrados y revisados desde otra fuente | Sí |
 | `generated_set` | Valores producidos mediante una expansión controlada | Sí |
-| `external_wordlist` | Lista externa útil para consumo directo | No |
+| `external_wordlist` | Lista externa seleccionable explícitamente por el wizard | Solo wizard |
 | `reference` | Cheatsheet, documentación o fuente de revisión | No |
 
-La validación del perfil hace cumplir esta frontera. Una lista LFI ya compuesta, una colección
-enorme de content types o un documento Markdown pueden encontrarse desde el catálogo, pero no
-usarse como dimensión de un perfil integrado.
+La validación del perfil hace cumplir esta frontera. Los perfiles YAML y `guided` solo usan los
+tres tipos de sets. El wizard puede incorporar expresamente una lista LFI ya compuesta o una
+colección grande de content types, pero nunca un documento o entrada `reference`.
 
 ## Componentes
 
@@ -44,11 +44,14 @@ CLI / wizard
 El núcleo no conoce Rich ni decisiones de presentación. La CLI no contiene lógica alternativa de
 composición. El wizard llama a los mismos servicios que los comandos no interactivos.
 
-El wizard libre selecciona de uno a cuatro sets componibles. Acumula términos sobre nombre, ID,
-descripción y etiquetas, muestra las etiquetas todavía disponibles y admite valores inline
-pegados por el usuario. El primer set catalogado fija el dominio. Después enumera las permutaciones
-de placeholders para que el usuario seleccione patrones explícitos antes de estimar. El comando
-`guided` mantiene el recorrido por perfiles integrados.
+El wizard libre selecciona de uno a cuatro sets o wordlists externas. Acumula términos sobre
+nombre, ID, descripción y etiquetas, muestra el tipo, la disponibilidad y las etiquetas todavía
+disponibles, permite abrir el contenido completo en el paginador del sistema sin seleccionar, y
+admite valores inline pegados o un fichero local elegido expresamente por el usuario. Estos
+ficheros arbitrarios son runtime-only: no amplían las rutas permitidas por el esquema YAML. El
+primer set catalogado fija el dominio. Después enumera las permutaciones de placeholders para que
+el usuario seleccione patrones explícitos antes de estimar. El comando `guided` mantiene el
+recorrido por perfiles integrados.
 
 ## Catálogo
 
@@ -60,9 +63,14 @@ La puntuación se usa internamente para ordenar, pero no se expone como metadata
 oculta salvo petición explícita; así, una consulta operativa devuelve sets y wordlists antes que
 cheatsheets generales.
 
+Sin términos, `dicts search` entra en un bucle interactivo: acumula tags o fragmentos de nombre,
+permite retirar filtros y reutiliza las tablas, metadatos y paginador del wizard. Con términos
+mantiene la búsqueda no interactiva apta para scripts.
+
 `source: local` se resuelve contra los recursos del proyecto. Una fuente con nombre, como
-`source: seclists`, se resuelve contra la ruta registrada. Una URL se conserva como referencia
-remota y nunca se descarga automáticamente.
+`source: seclists`, se resuelve contra la ruta registrada. Al elegir una entrada SecLists no
+resuelta, el wizard ejecuta una detección local superficial. Una URL solo puede descargarse para
+`external_wordlist`, tras confirmación, con límite de tamaño y caché; `reference` nunca se descarga.
 
 ## Sources
 
@@ -131,9 +139,10 @@ explicar el criterio, no solo aumentar su tamaño.
 
 ## Fuera de alcance
 
-Quedan fuera el rastreo genérico de árboles externos, la generación de explicaciones adicionales,
-HTTP, Burp, web UI, explotación automática, archivos destructivos y dominios distintos de los dos
-incluidos. El repositorio contiene únicamente recursos que participan en el producto actual.
+Quedan fuera el rastreo genérico de árboles externos, las peticiones a objetivos, la generación de
+explicaciones adicionales, Burp, web UI, explotación automática, archivos destructivos y dominios
+distintos de los dos incluidos. El repositorio contiene únicamente recursos que participan en el
+producto actual.
 
 ## Criterios para ampliar el MVP
 
@@ -143,4 +152,4 @@ Un nuevo dominio solo debe activarse cuando:
 - aporte perfiles acotados que no mezclen átomos con payloads completos;
 - la búsqueda produzca pocos resultados relevantes;
 - su comportamiento pueda explicarse sin una gramática específica del objetivo;
-- mantenga el carácter completamente offline del compositor.
+- no introduzca tráfico hacia objetivos; las descargas seguirán limitadas a wordlists catalogadas.

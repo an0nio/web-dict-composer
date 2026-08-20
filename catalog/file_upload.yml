@@ -107,6 +107,15 @@ entries:
     tags: [file-upload, filenames, separators, encoded, normalization, atoms]
     description: Encoded separator and control candidates kept separate from literal separators.
 
+  - id: file_upload_filename_all_separators
+    name: All filename separators
+    domain: file_upload
+    kind: derived_set
+    source: local
+    path: sets/file_upload/filename/all_separators.txt
+    tags: [file-upload, filenames, separators, all, aggregate, normalization, mass-fuzzing, atoms]
+    description: Broad aggregate of the reviewed literal, path-like, Unicode, and encoded filename separators.
+
   - id: file_upload_content_types_common
     name: Common upload content types
     domain: file_upload

@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 
 from web_dict_composer.core.artifacts import build_artifacts
 from web_dict_composer.core.engine import compose, estimate_profile
 from web_dict_composer.core.errors import ProfileError, SafetyLimitError
-from web_dict_composer.core.profile import load_profile
+from web_dict_composer.core.profile import Profile, load_local_dictionary_file, load_profile
 from web_dict_composer.core.resources import profile_files
+from web_dict_composer.sources.manager import add_source
 
 
 class EngineTests(unittest.TestCase):
@@ -100,6 +103,77 @@ class EngineTests(unittest.TestCase):
             path.write_text(yaml.safe_dump(data), encoding="utf-8")
             with self.assertRaisesRegex(ProfileError, "external_wordlist"):
                 load_profile(path)
+
+    def test_wizard_profile_can_compose_a_resolved_external_wordlist(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            seclists = base / "SecLists"
+            wordlist = seclists / "Discovery" / "Web-Content" / "web-extensions.txt"
+            wordlist.parent.mkdir(parents=True)
+            (seclists / "Fuzzing").mkdir()
+            (seclists / "README.md").write_text("SecLists fixture\n", encoding="utf-8")
+            wordlist.write_text("php\nhtml\n", encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {"XDG_CONFIG_HOME": str(base / "config")},
+                clear=False,
+            ):
+                add_source("seclists", seclists)
+                profile = Profile(
+                    path=Path("<wizard-test>"),
+                    id="wizard_external_test",
+                    domain="file_upload",
+                    description="Wizard external wordlist fixture.",
+                    sets_spec={
+                        "extension": {"catalog": "seclists_web_extensions"},
+                    },
+                    patterns=["{extension}"],
+                    filters={"max_outputs": 10},
+                )
+                result = compose(profile)
+
+            self.assertEqual(result.values, ["php", "html"])
+
+    def test_wizard_profile_can_read_an_explicit_file_outside_the_project(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "allowed_extensions.txt"
+            path.write_text(".jpg\n.jpeg\n# ignored\n.jpg\n", encoding="utf-8")
+            resolved, values = load_local_dictionary_file(path)
+            profile = Profile(
+                path=Path("<wizard-file-test>"),
+                id="wizard_file_test",
+                domain="file_upload",
+                description="Wizard local file fixture.",
+                sets_spec={"allowed_extensions": {"file": str(resolved)}},
+                patterns=["{allowed_extensions}"],
+                runtime_files={"allowed_extensions": resolved},
+            )
+            result = compose(profile)
+
+            self.assertEqual(values, (".jpg", ".jpeg", ".jpg"))
+            self.assertEqual(result.values, [".jpg", ".jpeg"])
+            self.assertEqual(result.sets["allowed_extensions"].source, str(resolved))
+
+    def test_saved_yaml_profile_still_cannot_read_an_absolute_external_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            dictionary = base / "outside.txt"
+            dictionary.write_text("value\n", encoding="utf-8")
+            profile_path = base / "outside-profile.yml"
+            profile_path.write_text(
+                yaml.safe_dump(
+                    {
+                        "id": "outside_file_test",
+                        "domain": "file_upload",
+                        "description": "External path guard fixture.",
+                        "sets": {"value": {"file": str(dictionary)}},
+                        "patterns": ["{value}"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ProfileError, "escapes the project root"):
+                load_profile(profile_path)
 
     def test_unknown_placeholder_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

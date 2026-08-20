@@ -7,9 +7,15 @@ from typing import Any
 
 import yaml
 
-from web_dict_composer.catalog.service import COMPOSABLE_KINDS, get_entry, resolve_entry
+from web_dict_composer.catalog.service import (
+    COMPOSABLE_KINDS,
+    CatalogEntry,
+    get_entry,
+    resolve_entry,
+)
 from web_dict_composer.core.errors import ComposerError, ProfileError
 from web_dict_composer.core.resources import resolve_profile, resolve_resource
+from web_dict_composer.sources.external import cached_external_wordlist
 from web_dict_composer.transforms.library import TRANSFORMS
 
 
@@ -39,6 +45,7 @@ class Profile:
     transforms: list[dict[str, Any]] = field(default_factory=list)
     filters: dict[str, Any] = field(default_factory=dict)
     output: dict[str, Any] = field(default_factory=dict)
+    runtime_files: dict[str, Path] = field(default_factory=dict, repr=False)
 
 def _normalize_transforms(raw: Any) -> list[dict[str, Any]]:
     if raw is None:
@@ -254,7 +261,10 @@ def validate_profile(profile: Profile) -> list[str]:
 
 
 def _read_values(path: Path) -> tuple[str, ...]:
-    raw_lines = path.read_text(encoding="utf-8").splitlines()
+    try:
+        raw_lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ProfileError(f"Could not read catalog set as UTF-8 text: {path}") from exc
     values = tuple(
         line.strip()
         for line in raw_lines
@@ -263,6 +273,26 @@ def _read_values(path: Path) -> tuple[str, ...]:
     if not values:
         raise ProfileError(f"Set has no usable values: {path}")
     return values
+
+
+def load_catalog_entry_values(entry: CatalogEntry) -> tuple[str, ...]:
+    resolved = resolve_entry(entry)
+    if resolved and resolved.startswith(("https://", "http://")):
+        cached = cached_external_wordlist(entry)
+        resolved = str(cached) if cached else None
+    if not resolved or resolved.startswith(("https://", "http://")):
+        raise ProfileError(f"Catalog set is not locally readable: {entry.id}")
+    return _read_values(Path(resolved))
+
+
+def load_local_dictionary_file(reference: str | Path) -> tuple[Path, tuple[str, ...]]:
+    try:
+        path = Path(reference).expanduser().resolve(strict=True)
+    except OSError as exc:
+        raise ProfileError(f"Local dictionary does not exist: {reference}") from exc
+    if not path.is_file():
+        raise ProfileError(f"Local dictionary is not a regular file: {path}")
+    return path, _read_values(path)
 
 
 def _repeat_values(values: tuple[str, ...], spec: dict[str, Any]) -> tuple[str, ...]:
@@ -281,6 +311,14 @@ def _repeat_values(values: tuple[str, ...], spec: dict[str, Any]) -> tuple[str, 
 def load_sets(profile: Profile) -> dict[str, LoadedSet]:
     loaded: dict[str, LoadedSet] = {}
     for name, spec in profile.sets_spec.items():
+        runtime_path = profile.runtime_files.get(name)
+        if runtime_path is not None:
+            loaded[name] = LoadedSet(
+                name=name,
+                values=_repeat_values(_read_values(runtime_path), spec),
+                source=str(runtime_path),
+            )
+            continue
         if "inline" in spec:
             values = tuple(str(value) for value in spec["inline"])
             loaded[name] = LoadedSet(
@@ -306,10 +344,7 @@ def load_sets(profile: Profile) -> dict[str, LoadedSet]:
         combined: list[str] = []
         for dictionary_id in catalog_ids:
             entry = get_entry(dictionary_id)
-            resolved = resolve_entry(entry)
-            if not resolved or resolved.startswith(("https://", "http://")):
-                raise ProfileError(f"Catalog set is not locally readable: {dictionary_id}")
-            combined.extend(_read_values(Path(resolved)))
+            combined.extend(load_catalog_entry_values(entry))
         values = _repeat_values(tuple(dict.fromkeys(combined)), spec)
         loaded[name] = LoadedSet(
             name=name,

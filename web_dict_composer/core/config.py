@@ -16,6 +16,11 @@ def config_file() -> Path:
     return config_dir() / "sources.json"
 
 
+def cache_dir() -> Path:
+    base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    return base / "web-dict-composer"
+
+
 def load_json(path: Path, default: Any) -> Any:
     if not path.is_file():
         return default

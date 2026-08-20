@@ -1,0 +1,11 @@
+etc/passwd
+etc//passwd
+etc\/passwd
+etc%2fpasswd
+etc%2Fpasswd
+etc%252fpasswd
+etc%252Fpasswd
+etc%c0%afpasswd
+etc2fpasswd
+etc%ef%bc%8fpasswd
+etc／passwd

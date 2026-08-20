@@ -7,6 +7,17 @@
 - Preserve the former built-in profile flow as the `guided` command.
 - Show catalog tags alongside descriptions in dictionary search results.
 - Add user-facing tag aliases for dangerous handlers, allowed extensions, and traversal steps.
+- Allow the wizard to select `external_wordlist` entries while continuing to exclude references.
+- Locate SecLists automatically on selection and support confirmed, size-limited URL downloads
+  cached under the XDG cache directory.
+- Preview complete dictionaries through the system pager before wizard selection.
+- Run `dicts search` as a progressive tag/name search session when no query is supplied.
+- Load an arbitrary explicit UTF-8 dictionary path from the wizard without relaxing YAML profile
+  path containment.
+- Add broad aggregate sets for file-upload separators and Linux/Windows traversal steps, including
+  reviewed separator atoms derived from SecLists `LFI-Jhaddix.txt`.
+- Add bounded generated target matrices for `etc/passwd`, `Windows/win.ini`, and `index.php`
+  separator/dot normalization fuzzing.
 
 ## 0.3.0 — 2026-08-17
 
