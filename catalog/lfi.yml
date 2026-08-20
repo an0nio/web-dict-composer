@@ -5,7 +5,7 @@ entries:
     kind: atom_set
     source: local
     path: sets/lfi/traversal/steps_unix.txt
-    tags: [lfi, path-traversal, backwards, unix, steps, atoms]
+    tags: [lfi, traversal, path-traversal, backwards, unix, steps, atoms]
     description: Atomic Unix-style parent-directory steps without pre-expanded depths.
 
   - id: lfi_traversal_steps_windows
@@ -14,7 +14,7 @@ entries:
     kind: atom_set
     source: local
     path: sets/lfi/traversal/steps_windows.txt
-    tags: [lfi, path-traversal, backwards, windows, steps, atoms]
+    tags: [lfi, traversal, path-traversal, backwards, windows, steps, atoms]
     description: Atomic Windows-style parent-directory steps without pre-expanded depths.
 
   - id: lfi_traversal_steps_encoded
@@ -23,7 +23,7 @@ entries:
     kind: atom_set
     source: local
     path: sets/lfi/traversal/steps_encoded.txt
-    tags: [lfi, path-traversal, backwards, encoded, steps, atoms]
+    tags: [lfi, traversal, path-traversal, backwards, encoded, steps, atoms]
     description: Single-encoded parent-directory steps kept separate from target paths.
 
   - id: lfi_traversal_steps_double_encoded
@@ -32,7 +32,7 @@ entries:
     kind: atom_set
     source: local
     path: sets/lfi/traversal/steps_double_encoded.txt
-    tags: [lfi, path-traversal, backwards, double-encoded, steps, atoms]
+    tags: [lfi, traversal, path-traversal, backwards, double-encoded, steps, atoms]
     description: Double-encoded traversal steps for explicitly justified decoding chains.
 
   - id: lfi_traversal_steps_filter_bypass
@@ -41,7 +41,7 @@ entries:
     kind: atom_set
     source: local
     path: sets/lfi/traversal/steps_filter_bypass.txt
-    tags: [lfi, path-traversal, backwards, filter-bypass, steps, atoms]
+    tags: [lfi, traversal, path-traversal, backwards, filter-bypass, steps, atoms]
     description: Small experimental set of non-recursive filter normalization forms.
 
   - id: lfi_linux_targets_basic

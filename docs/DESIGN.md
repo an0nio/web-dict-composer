@@ -44,6 +44,12 @@ CLI / wizard
 El núcleo no conoce Rich ni decisiones de presentación. La CLI no contiene lógica alternativa de
 composición. El wizard llama a los mismos servicios que los comandos no interactivos.
 
+El wizard libre selecciona de uno a cuatro sets componibles. Acumula términos sobre nombre, ID,
+descripción y etiquetas, muestra las etiquetas todavía disponibles y admite valores inline
+pegados por el usuario. El primer set catalogado fija el dominio. Después enumera las permutaciones
+de placeholders para que el usuario seleccione patrones explícitos antes de estimar. El comando
+`guided` mantiene el recorrido por perfiles integrados.
+
 ## Catálogo
 
 Los únicos campos son `id`, `name`, `domain`, `kind`, `source`, `path`, `tags` y `description`.

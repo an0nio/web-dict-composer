@@ -36,8 +36,9 @@ web-dict-composer dicts search "file-upload content-type"
 web-dict-composer dicts search "lfi traversal encoded"
 ```
 
-La búsqueda presenta una tabla con ID, tipo, fuente, ruta y descripción. Las referencias humanas
-se excluyen por defecto para no contaminar los resultados:
+La búsqueda presenta una tabla con ID, tipo, fuente, ruta, etiquetas y descripción. Las etiquetas
+y el texto descriptivo también participan en el filtrado. Las referencias humanas se excluyen por
+defecto para no contaminar los resultados:
 
 ```bash
 web-dict-composer dicts search "file-upload php extensions" --include-references
@@ -80,11 +81,37 @@ web-dict-composer profiles estimate PROFILE [--json]
 web-dict-composer profiles build PROFILE [-o FILE] [--force]
 
 web-dict-composer wizard
+web-dict-composer guided
 ```
 
 `PROFILE` puede ser un ID, una ruta de perfil integrada como `file_upload/php_jpg_quick` o un
 archivo YAML. `--force` permite continuar cuando la estimación supera `max_outputs`, pero mantiene
 el límite duro y marca el resultado como truncado.
+
+## Wizard interactivo
+
+`wizard` crea una composición nueva sin exigir que conozcas los IDs del catálogo. Primero pregunta
+cuántos diccionarios quieres combinar —entre uno y cuatro— y después selecciona cada entrada por
+separado.
+
+En cada selección puedes:
+
+- escribir una etiqueta, por ejemplo `file-upload`, y añadir otras como `dangerous` o `php` para
+  reducir progresivamente los resultados;
+- ver el ID, la descripción y las etiquetas restantes de cada coincidencia;
+- introducir directamente un ID o nombre conocido;
+- usar `:custom` y pegar valores propios, uno por línea, terminando con `:done`;
+- usar `:all`, `:reset` y `:tags` para explorar el catálogo.
+
+El primer diccionario del catálogo fija el dominio de la composición para impedir mezclas
+incompatibles. Los diccionarios personalizados pueden combinarse con los del catálogo. Después, el
+wizard genera las permutaciones posibles de los placeholders, permite incluir opcionalmente
+patrones más cortos que todavía combinen al menos dos sets y acepta selecciones como `1,3-5` o
+`all`. Finalmente muestra la estimación y solicita confirmación antes de escribir el wordlist y su
+manifest.
+
+`guided` conserva el flujo anterior: elegir un dominio y un perfil integrado, sustituir
+opcionalmente algún set compatible y construirlo tras revisar la estimación.
 
 ## Catálogo
 
@@ -176,9 +203,8 @@ LFI / Path Traversal:
 - `lfi_log_targets`
 - `lfi_traversal_prefixes_1_8`
 
-`wizard` guía la elección del dominio y el perfil, permite sustituir opcionalmente un set por una
-entrada componible del catálogo con etiquetas compatibles, muestra la estimación y ofrece generar
-el resultado.
+Usa `guided` para recorrer estos perfiles de forma interactiva. Usa `wizard` para seleccionar
+diccionarios por etiquetas o contenido personalizado y decidir exactamente qué patrones generar.
 
 ## SecLists
 

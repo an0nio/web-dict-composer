@@ -32,7 +32,7 @@ entries:
     kind: atom_set
     source: local
     path: sets/file_upload/extensions/aspnet_handler_candidates.txt
-    tags: [file-upload, asp, aspnet, iis, extensions, handlers, atoms]
+    tags: [file-upload, asp, aspnet, iis, dangerous, extensions, handlers, atoms]
     description: Curated classic ASP and ASP.NET handler extension candidates.
 
   - id: file_upload_jsp_handler_candidates
@@ -41,7 +41,7 @@ entries:
     kind: atom_set
     source: local
     path: sets/file_upload/extensions/jsp_handler_candidates.txt
-    tags: [file-upload, java, jsp, tomcat, extensions, handlers, atoms]
+    tags: [file-upload, java, jsp, tomcat, dangerous, extensions, handlers, atoms]
     description: Curated JSP handler candidates with defaults separated from historical forms.
 
   - id: file_upload_allowed_image_extensions
@@ -50,7 +50,7 @@ entries:
     kind: atom_set
     source: local
     path: sets/file_upload/extensions/allowed_images.txt
-    tags: [file-upload, images, allowlist, extensions, atoms]
+    tags: [file-upload, images, allowed, allowlist, extensions, atoms]
     description: Small passive-image allowlist for filename composition.
 
   - id: file_upload_allowed_document_extensions
@@ -59,7 +59,7 @@ entries:
     kind: atom_set
     source: local
     path: sets/file_upload/extensions/allowed_documents.txt
-    tags: [file-upload, documents, allowlist, extensions, atoms]
+    tags: [file-upload, documents, allowed, allowlist, extensions, atoms]
     description: Small document allowlist for upload validation exercises.
 
   - id: file_upload_allowed_archive_extensions
@@ -68,7 +68,7 @@ entries:
     kind: atom_set
     source: local
     path: sets/file_upload/extensions/allowed_archives.txt
-    tags: [file-upload, archives, allowlist, extensions, atoms]
+    tags: [file-upload, archives, allowed, allowlist, extensions, atoms]
     description: Small archive allowlist without archive contents or extraction payloads.
 
   - id: file_upload_limited_upload_candidates

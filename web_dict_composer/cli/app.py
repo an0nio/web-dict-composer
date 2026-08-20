@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
+import re
 import sys
+from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
@@ -137,7 +140,16 @@ def _parser() -> argparse.ArgumentParser:
         help="Permit a deterministic capped result when the estimate exceeds the hard limit.",
     )
 
-    commands.add_parser("wizard", help="Run the guided interactive composer.", **common)
+    commands.add_parser(
+        "wizard",
+        help="Build a custom composition interactively.",
+        **common,
+    )
+    commands.add_parser(
+        "guided",
+        help="Choose and customize a built-in profile interactively.",
+        **common,
+    )
     return parser
 
 
@@ -243,6 +255,8 @@ def _catalog_table(entries: list[CatalogEntry], *, search: bool = False) -> Tabl
             details.append(entry.source, style=_source_style(entry.source))
             details.append("\nPath: ", style="muted")
             details.append(entry.path.replace("/", "/\n"))
+            details.append("\nTags: ", style="muted")
+            details.append(", ".join(entry.tags))
             details.append("\nDescription: ", style="muted")
             details.append(entry.description)
             if not resolve_entry(entry) and entry.source != "local":
@@ -262,6 +276,7 @@ def _catalog_table(entries: list[CatalogEntry], *, search: bool = False) -> Tabl
     table.add_column("Source", no_wrap=True)
     table.add_column("Path", style="white", overflow="fold")
     if search:
+        table.add_column("Tags", overflow="fold")
         table.add_column("Description")
 
     for entry in entries:
@@ -273,6 +288,7 @@ def _catalog_table(entries: list[CatalogEntry], *, search: bool = False) -> Tabl
             entry.path,
         ]
         if search:
+            row.append(", ".join(entry.tags))
             description = Text(entry.description)
             if not resolve_entry(entry) and entry.source != "local":
                 description.append("\nSource not available locally.", style="warning")
@@ -477,13 +493,391 @@ def _choose_catalog_set(profile: Profile) -> None:
         replaceable = _replaceable_sets(profile)
 
 
+def _composable_entries(domain: str | None = None) -> list[CatalogEntry]:
+    entries = list_entries(domain=domain)
+    return [
+        entry
+        for entry in entries
+        if entry.kind in COMPOSABLE_KINDS
+        and not entry.path.startswith(("https://", "http://"))
+        and resolve_entry(entry)
+    ]
+
+
+def _filter_composable_entries(
+    entries: list[CatalogEntry], terms: list[str]
+) -> list[CatalogEntry]:
+    normalized = [term.casefold() for term in terms if term.strip()]
+    if not normalized:
+        return entries
+    matches = []
+    for entry in entries:
+        searchable = " ".join(
+            (
+                entry.id,
+                entry.name,
+                entry.domain,
+                entry.kind,
+                entry.path,
+                entry.description,
+                *entry.tags,
+            )
+        ).casefold()
+        if all(term in searchable for term in normalized):
+            matches.append(entry)
+    return matches
+
+
+def _remaining_tags(entry: CatalogEntry, terms: list[str]) -> tuple[str, ...]:
+    active = {term.casefold() for term in terms}
+    return tuple(tag for tag in entry.tags if tag.casefold() not in active)
+
+
+def _tag_counts(
+    entries: list[CatalogEntry], terms: list[str] | None = None
+) -> list[tuple[str, int]]:
+    active = {term.casefold() for term in (terms or [])}
+    counts: dict[str, int] = {}
+    for entry in entries:
+        for tag in entry.tags:
+            if tag.casefold() not in active:
+                counts[tag] = counts.get(tag, 0) + 1
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+
+
+def _print_tag_summary(entries: list[CatalogEntry], terms: list[str] | None = None) -> None:
+    tags = _tag_counts(entries, terms)
+    line = Text("Available tags: ", style="muted")
+    for index, (tag, count) in enumerate(tags):
+        if index:
+            line.append(", ", style="muted")
+        line.append(tag, style="accent")
+        line.append(f" ({count})", style="muted")
+    console.print(line)
+
+
+def _wizard_dictionary_table(
+    entries: list[CatalogEntry], terms: list[str], *, show_domain: bool
+) -> Table:
+    table = Table(
+        title=f"Matching dictionaries ({len(entries)})",
+        header_style="bold bright_cyan",
+        show_lines=True,
+    )
+    table.add_column("#", justify="right", style="accent", no_wrap=True)
+    table.add_column("ID", style="cyan", overflow="fold")
+    if show_domain:
+        table.add_column("Domain", style="magenta", no_wrap=True)
+    table.add_column("Description", overflow="fold")
+    table.add_column("Remaining tags", overflow="fold")
+    for number, entry in enumerate(entries, 1):
+        row = [str(number), entry.id]
+        if show_domain:
+            row.append(entry.domain)
+        row.extend((entry.description, ", ".join(_remaining_tags(entry, terms)) or "—"))
+        table.add_row(*row)
+    return table
+
+
+def _custom_dictionary_values() -> list[str]:
+    console.print(
+        "Enter one value per line. You can paste several lines; type "
+        "[accent]:done[/accent] on its own line when finished."
+    )
+    values: list[str] = []
+    while True:
+        try:
+            value = console.input("[accent]> [/accent]").strip()
+        except EOFError as exc:
+            raise ComposerError("Input ended before the custom dictionary was finished.") from exc
+        if value.casefold() == ":done":
+            if values:
+                return list(dict.fromkeys(values))
+            console.print("[warning]Add at least one value before finishing.[/warning]")
+            continue
+        if value:
+            values.append(value)
+
+
+def _select_wizard_dictionary(
+    number: int, total: int, domain: str | None
+) -> tuple[CatalogEntry | None, list[str] | None]:
+    pool = _composable_entries(domain)
+    if not pool:
+        raise ComposerError("No locally available composable dictionaries were found.")
+
+    filters: list[str] = []
+    visible: list[CatalogEntry] = []
+    console.print(f"\n[brand]Dictionary {number} of {total}[/brand]")
+    if domain:
+        console.print(f"[muted]Composition domain: {domain}[/muted]")
+    _print_tag_summary(pool)
+    console.print(
+        "Type tags to narrow the results, a known ID/name to select it, or a command: "
+        "[accent]:custom[/accent], [accent]:all[/accent], [accent]:reset[/accent], "
+        "[accent]:tags[/accent]."
+    )
+
+    while True:
+        raw = Prompt.ask("Tag, dictionary, or result number").strip()
+        command = raw.casefold()
+        if command == ":custom":
+            return None, _custom_dictionary_values()
+        if command == ":reset":
+            filters.clear()
+            visible = []
+            _print_tag_summary(pool)
+            continue
+        if command == ":all":
+            filters.clear()
+            visible = pool
+            console.print(
+                _wizard_dictionary_table(visible, filters, show_domain=domain is None)
+            )
+            continue
+        if command == ":tags":
+            _print_tag_summary(visible or pool, filters)
+            continue
+
+        exact = [
+            entry
+            for entry in pool
+            if command in {entry.id.casefold(), entry.name.casefold()}
+        ]
+        if len(exact) == 1:
+            return exact[0], None
+
+        if raw.isdigit() and visible:
+            selected = int(raw)
+            if 1 <= selected <= len(visible):
+                return visible[selected - 1], None
+            console.print("[warning]That result number is outside the displayed range.[/warning]")
+            continue
+
+        new_terms = re.findall(r"[a-z0-9]+(?:[-_][a-z0-9]+)*", command)
+        if not new_terms:
+            console.print("[warning]Enter a tag, name, ID, or command.[/warning]")
+            continue
+        proposed = filters + [term for term in new_terms if term not in filters]
+        matches = _filter_composable_entries(pool, proposed)
+        if not matches:
+            console.print(
+                "[warning]No dictionaries match those filters; the previous selection "
+                "was kept.[/warning]"
+            )
+            continue
+        filters = proposed
+        visible = matches
+        console.print(f"[muted]Active filters: {' + '.join(filters)}[/muted]")
+        console.print(_wizard_dictionary_table(visible, filters, show_domain=domain is None))
+
+
+def _suggest_alias(entry: CatalogEntry | None, number: int, used: set[str]) -> str:
+    if entry:
+        tags = {tag.casefold() for tag in entry.tags}
+        suggestions = (
+            ("bases", "base"),
+            ("dangerous", "dangerous"),
+            ("allowlist", "allowed"),
+            ("separators", "sep"),
+            ("steps", "traversal"),
+            ("targets", "target"),
+            ("wrappers", "wrapper"),
+            ("suffixes", "suffix"),
+        )
+        for tag, alias in suggestions:
+            if tag in tags and alias not in used:
+                return alias
+    return f"set{number}"
+
+
+def _prompt_alias(entry: CatalogEntry | None, number: int, used: set[str]) -> str:
+    default = _suggest_alias(entry, number, used)
+    while True:
+        alias = Prompt.ask(
+            "Short placeholder name used in patterns",
+            default=default,
+        ).strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", alias):
+            console.print(
+                "[warning]Use letters, numbers, and underscores, starting with a letter "
+                "or underscore.[/warning]"
+            )
+        elif alias in used:
+            console.print("[warning]That placeholder name is already in use.[/warning]")
+        else:
+            return alias
+
+
+def _pattern_options(aliases: list[str], include_subsets: bool = False) -> list[str]:
+    if include_subsets and len(aliases) > 1:
+        lengths = range(len(aliases), 1, -1)
+    else:
+        lengths = (len(aliases),)
+    return [
+        "".join(f"{{{alias}}}" for alias in ordering)
+        for length in lengths
+        for ordering in itertools.permutations(aliases, length)
+    ]
+
+
+def _parse_number_selection(value: str, maximum: int) -> list[int]:
+    if value.strip().casefold() == "all":
+        return list(range(maximum))
+    selected: list[int] = []
+    for item in value.split(","):
+        token = item.strip()
+        if not token:
+            raise ValueError("Use numbers separated by commas, ranges such as 2-5, or 'all'.")
+        if "-" in token:
+            bounds = token.split("-", 1)
+            if len(bounds) != 2 or not all(bound.strip().isdigit() for bound in bounds):
+                raise ValueError(f"Invalid range: {token}")
+            start, end = (int(bound.strip()) for bound in bounds)
+            if start > end:
+                raise ValueError(f"Range must be ascending: {token}")
+            numbers = range(start, end + 1)
+        elif token.isdigit():
+            numbers = (int(token),)
+        else:
+            raise ValueError(f"Invalid selection: {token}")
+        for number in numbers:
+            if not 1 <= number <= maximum:
+                raise ValueError(f"Pattern number {number} is outside 1-{maximum}.")
+            index = number - 1
+            if index not in selected:
+                selected.append(index)
+    if not selected:
+        raise ValueError("Select at least one pattern.")
+    return selected
+
+
+def _select_patterns(aliases: list[str]) -> list[str]:
+    include_subsets = len(aliases) > 1 and Confirm.ask(
+        "Also offer shorter patterns that still combine at least two dictionaries?",
+        default=False,
+    )
+    patterns = _pattern_options(aliases, include_subsets)
+    table = Table(title="Available composition patterns", header_style="bold bright_cyan")
+    table.add_column("#", justify="right", style="accent")
+    table.add_column("Pattern", style="cyan")
+    table.add_column("Uses", justify="right", style="muted")
+    for number, pattern in enumerate(patterns, 1):
+        table.add_row(str(number), pattern, str(pattern.count("{")))
+    console.print(table)
+    console.print(
+        "[muted]Choose comma-separated numbers, ranges such as 1-3, or all.[/muted]"
+    )
+    while True:
+        raw = Prompt.ask("Patterns to generate", default="all")
+        try:
+            return [patterns[index] for index in _parse_number_selection(raw, len(patterns))]
+        except ValueError as exc:
+            console.print(f"[warning]{exc}[/warning]")
+
+
 def _wizard() -> int:
     if not console.is_terminal:
         raise ComposerError(
-            "The wizard needs an interactive terminal. Use `profiles list` and `profiles build`."
+            "The wizard needs an interactive terminal. Use `profiles build` in scripts."
         )
     _banner()
-    console.print("[muted]This wizard writes only a wordlist and compact manifest.[/muted]\n")
+    console.print(
+        "[muted]Build a custom composition from catalog dictionaries or pasted values. "
+        "Up to four inputs keeps every ordering easy to review.[/muted]\n"
+    )
+    count = IntPrompt.ask(
+        "How many dictionaries do you want to combine?",
+        choices=["1", "2", "3", "4"],
+        default=3,
+    )
+
+    domain: str | None = None
+    used_aliases: set[str] = set()
+    sets_spec: dict[str, dict[str, object]] = {}
+    selected_rows: list[tuple[str, str, str]] = []
+    for number in range(1, count + 1):
+        entry, custom_values = _select_wizard_dictionary(number, count, domain)
+        if entry and domain is None:
+            domain = entry.domain
+            console.print(f"[success]Composition domain set to {domain}.[/success]")
+        alias = _prompt_alias(entry, number, used_aliases)
+        used_aliases.add(alias)
+        if entry:
+            sets_spec[alias] = {"catalog": entry.id}
+            selected_rows.append((alias, entry.id, entry.description))
+        else:
+            values = custom_values or []
+            sets_spec[alias] = {"inline": values}
+            selected_rows.append((alias, "custom", f"{len(values)} inline values"))
+
+    if domain is None:
+        domains = list(ACTIVE_DOMAINS)
+        for number, candidate in enumerate(domains, 1):
+            console.print(f"  [brand]{number}[/brand]  {candidate}")
+        domain = domains[
+            IntPrompt.ask(
+                "Choose a domain for this custom composition",
+                choices=[str(number) for number in range(1, len(domains) + 1)],
+            )
+            - 1
+        ]
+
+    selected_table = Table(title="Selected dictionaries", header_style="bold bright_cyan")
+    selected_table.add_column("Placeholder", style="accent")
+    selected_table.add_column("Dictionary", style="cyan")
+    selected_table.add_column("Description")
+    for row in selected_rows:
+        selected_table.add_row(*row)
+    console.print(selected_table)
+
+    aliases = list(sets_spec)
+    patterns = _select_patterns(aliases)
+    while True:
+        max_outputs = IntPrompt.ask("Maximum output lines", default=50_000)
+        if max_outputs > 0:
+            break
+        console.print("[warning]The maximum must be a positive number.[/warning]")
+    profile_id = "wizard_" + "_".join(alias.casefold() for alias in aliases)
+    profile = Profile(
+        path=Path("<interactive-wizard>"),
+        id=profile_id,
+        domain=domain,
+        description="Interactive composition created by the wizard.",
+        sets_spec=sets_spec,
+        patterns=patterns,
+        filters={"dedupe": True, "max_length": 240, "max_outputs": max_outputs},
+        output={"file": f"output/{profile_id}.txt"},
+    )
+
+    estimate = estimate_profile(profile)
+    _estimate_table(estimate)
+    if not Confirm.ask("Generate the wordlist and manifest?", default=True):
+        console.print("[muted]Nothing was written.[/muted]")
+        return 0
+    output = Prompt.ask("Output file", default=str(profile.output["file"]))
+    force = False
+    if estimate.expanded_upper_bound > estimate.max_outputs:
+        force = Confirm.ask(
+            "The estimate exceeds the hard cap. Generate a capped, marked result?",
+            default=False,
+        )
+        if not force:
+            console.print("[muted]Nothing was written.[/muted]")
+            return 0
+    return _build(profile, output, force)
+
+
+def _guided() -> int:
+    if not console.is_terminal:
+        raise ComposerError(
+            "Guided selection needs an interactive terminal. Use `profiles list` and "
+            "`profiles build`."
+        )
+    _banner()
+    console.print(
+        "[muted]Guided selection writes only a wordlist and compact manifest.[/muted]\n"
+    )
     domains = list(ACTIVE_DOMAINS)
     for number, domain in enumerate(domains, 1):
         console.print(f"  [brand]{number}[/brand]  {domain.replace('_', ' ').title()}")
@@ -514,10 +908,15 @@ def _wizard() -> int:
         return 0
     default_output = str(profile.output.get("file", f"output/{profile.id}.txt"))
     output = Prompt.ask("Output file", default=default_output)
-    force = estimate.expanded_upper_bound > estimate.max_outputs and Confirm.ask(
-        "The estimate exceeds the hard cap. Generate a capped, marked result?",
-        default=False,
-    )
+    force = False
+    if estimate.expanded_upper_bound > estimate.max_outputs:
+        force = Confirm.ask(
+            "The estimate exceeds the hard cap. Generate a capped, marked result?",
+            default=False,
+        )
+        if not force:
+            console.print("[muted]Nothing was written.[/muted]")
+            return 0
     return _build(profile, output, force)
 
 
@@ -537,6 +936,8 @@ def run(argv: list[str] | None = None) -> int:
             return _profiles_command(args)
         if args.command == "wizard":
             return _wizard()
+        if args.command == "guided":
+            return _guided()
         raise ComposerError(f"Unknown command: {args.command}")
     except ComposerError as exc:
         error_console.print(f"[danger]Error:[/danger] {exc}")
