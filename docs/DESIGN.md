@@ -92,14 +92,33 @@ salida. Un set define exactamente uno de:
 - `inline`: valores explícitos;
 - `catalog`: una entrada del catálogo;
 - `catalogs`: unión ordenada de varias entradas;
+- `catalog_selector`: opciones explícitas y defaults que `guided` resuelve como una selección de
+  uno o varios catálogos;
+- `runtime_input`: valores que un perfil exclusivamente guiado solicita como fichero UTF-8 local o
+  entrada pegada antes de estimar;
 - `file`: ruta local contenida en el proyecto, mantenida para perfiles personalizados.
 
 Las referencias de catálogo deben pertenecer al dominio del perfil y ser componibles. Los valores
 se cargan, normalizan por línea y deduplican conservando el orden.
 
+`catalog` y `catalogs` son siempre decisiones fijas. Un `catalog_selector` contiene `prompt`,
+`multiple`, `min_selections`, `default` y `options`. Sus opciones son IDs explícitos para que un
+cambio de tags no altere silenciosamente el comportamiento de un perfil. Los comandos no
+interactivos resuelven el selector mediante `default`; `guided` permite seleccionar por número,
+rango o `all` y previsualizar cada opción. La selección resuelta se guarda en el manifest como los
+IDs finales, no como metadata interactiva.
+
 Los placeholders de los patrones deben coincidir con sets declarados. Las transformaciones son
 simples, explícitas y ordenadas. La repetición acotada permite generar profundidad sin almacenar
 listas manuales de `../`, `../../`, etc.
+
+`file_upload_request_path_variants` es una transformación ramificada especializada. Separa el
+nombre almacenado de la representación de petición y, opcionalmente, genera hipótesis de
+saneamiento desde un nombre aceptado durante el upload. Distingue segmento URL, ruta relativa y
+object key; agrega las familias como alternativas, aplica un límite por valor de entrada y no
+pretende deducir renombrados aleatorios o dependientes del estado. El perfil integrado que la usa
+declara `runtime_input`, por lo que solo se estima y construye después de resolver su entrada desde
+`guided`.
 
 ## Estimación y límites
 
@@ -107,6 +126,10 @@ Antes de construir se calcula el producto por patrón y el multiplicador máximo
 transformaciones. Si el límite superior supera `max_outputs`, el build falla por defecto.
 `--force` no elimina el límite: produce como máximo ese número de líneas, se detiene de forma
 determinista y marca `truncated` en el manifest.
+
+Una transformación ramificada declara también su máximo de variantes por entrada. La estimación
+usa ese máximo como cota superior aunque la deduplicación real produzca normalmente muchas menos
+líneas.
 
 La deduplicación ocurre durante la composición. `max_length` descarta resultados demasiado largos.
 Esto mantiene el coste previsible y evita convertir una receta pequeña en millones de candidatos
@@ -121,9 +144,10 @@ Un build produce dos archivos:
 <output>.manifest.json
 ```
 
-El manifest se limita a versión de esquema, perfil, dominio, origen de sets, cantidad de patrones,
-candidatos, líneas finales, duplicados eliminados y truncación. La descripción reside en el
-catálogo/perfil y la revisión de procedencia vive bajo `docs/set_reviews/`.
+El manifest se limita a versión de esquema, perfil, dominio, origen de sets, transformaciones,
+cantidad de patrones, candidatos, líneas finales, duplicados eliminados y truncación. La
+descripción reside en el catálogo/perfil y la revisión de procedencia vive bajo
+`docs/set_reviews/`.
 
 ## Decisiones de contenido
 
@@ -132,6 +156,18 @@ extensiones se llaman *candidates*, porque el handler real depende de la configu
 de traversal se separan de targets, wrappers y suffixes. Los payloads compuestos de SecLists,
 PayloadsAllTheThings o FuzzDB se catalogan como listas externas o referencias, no se descomponen de
 forma automática.
+
+Las firmas binarias y los proyectos de webshells o reverse shells son siempre `reference`: pueden
+encontrarse con una búsqueda explícita, pero no aparecen en el wizard, no se descargan y no se
+convierten en artefactos. Webshells y reverse shells conservan tags específicos y comparten
+`shell-resources` como categoría de consulta. Una tabla de magic numbers sirve de apoyo humano, no
+sustituye un parser ni constituye por sí sola una validación segura de uploads.
+
+Los markers PHP de verificación son fixtures empaquetados fuera de `sets/`: no contienen shell,
+callbacks ni mutación y la aplicación nunca los ejecuta, sube o compone. El catálogo expone
+únicamente su guía como `reference`. La variante mínima confirma evaluación PHP mediante una
+cadena que no aparece literalmente en el source; la variante de diagnóstico añade rutas en
+hexadecimal y exige retirada manual después de la prueba.
 
 Cada set importante tiene una revisión con fuente, finalidad, inclusiones, exclusiones, dudas,
 adiciones y eliminaciones. La revisión es parte de la mantenibilidad: cambiar una lista exige poder

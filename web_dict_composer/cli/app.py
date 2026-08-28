@@ -30,6 +30,7 @@ from web_dict_composer.core.engine import Estimate, estimate_profile
 from web_dict_composer.core.errors import ComposerError
 from web_dict_composer.core.profile import (
     Profile,
+    catalog_selector_ids,
     load_catalog_entry_values,
     load_local_dictionary_file,
     load_profile,
@@ -40,6 +41,7 @@ from web_dict_composer.sources.external import (
     download_external_wordlist,
 )
 from web_dict_composer.sources.manager import add_source, load_sources, scan_seclists
+from web_dict_composer.transforms.library import FILE_UPLOAD_STORAGE_PRESETS
 
 
 THEME = Theme(
@@ -400,6 +402,11 @@ def _set_source(spec: dict[str, object]) -> str:
         return ", ".join(str(item) for item in spec["catalogs"])
     if "file" in spec:
         return str(spec["file"])
+    if "catalog_selector" in spec:
+        defaults = catalog_selector_ids(spec, "default")
+        return "select from catalog (default: " + ", ".join(defaults) + ")"
+    if "runtime_input" in spec:
+        return "guided runtime input"
     return "inline"
 
 
@@ -425,6 +432,8 @@ def _replacement_candidates(profile: Profile, set_name: str) -> list[CatalogEntr
         current_ids.add(str(spec["catalog"]))
     elif "catalogs" in spec:
         current_ids.update(str(item) for item in spec["catalogs"])
+    elif "catalog_selector" in spec:
+        current_ids.update(catalog_selector_ids(spec, "default"))
     primary_hints = set(SET_TAG_HINTS.get(set_name.casefold(), set()))
     hints = set(primary_hints)
     for dictionary_id in current_ids:
@@ -449,7 +458,8 @@ def _replaceable_sets(profile: Profile) -> list[str]:
     return [
         name
         for name in profile.sets_spec
-        if _replacement_candidates(profile, name)
+        if "catalog_selector" not in profile.sets_spec[name]
+        and _replacement_candidates(profile, name)
     ]
 
 
@@ -474,7 +484,13 @@ def _profiles_command(args: argparse.Namespace) -> int:
         for name, spec in profile.sets_spec.items():
             body.add_row(f"Set: {name}", _set_source(spec))
         console.print(Panel(body, title="[brand]Profile[/brand]", border_style="cyan"))
-        _estimate_table(estimate_profile(profile))
+        if any("runtime_input" in spec for spec in profile.sets_spec.values()):
+            console.print(
+                "[muted]This profile is estimated after its input is supplied through "
+                "`guided`.[/muted]"
+            )
+        else:
+            _estimate_table(estimate_profile(profile))
         return 0
     if args.profiles_command == "estimate":
         estimate = estimate_profile(load_profile(args.profile))
@@ -528,6 +544,101 @@ def _choose_catalog_set(profile: Profile) -> None:
             new_spec["repeat"] = old_spec["repeat"]
         profile.sets_spec[selected] = new_spec
         replaceable = _replaceable_sets(profile)
+
+
+def _catalog_selector_entries(profile: Profile, set_name: str) -> list[CatalogEntry]:
+    spec = profile.sets_spec[set_name]
+    return [get_entry(dictionary_id) for dictionary_id in catalog_selector_ids(spec, "options")]
+
+
+def _catalog_selector_default_input(
+    entries: list[CatalogEntry],
+    defaults: tuple[str, ...],
+) -> str:
+    selected = [
+        str(number)
+        for number, entry in enumerate(entries, 1)
+        if entry.id in defaults
+    ]
+    return "all" if len(selected) == len(entries) else ",".join(selected)
+
+
+def _select_catalog_selector(profile: Profile, set_name: str) -> tuple[str, ...]:
+    spec = profile.sets_spec[set_name]
+    selector = spec["catalog_selector"]
+    entries = _catalog_selector_entries(profile, set_name)
+    defaults = catalog_selector_ids(spec, "default")
+    multiple = bool(selector["multiple"])
+    minimum = int(selector.get("min_selections", 1))
+
+    table = Table(
+        title=f"Catalog selection: {set_name}",
+        header_style="bold bright_cyan",
+        show_lines=True,
+    )
+    table.add_column("#", justify="right", style="accent", no_wrap=True)
+    table.add_column("Default", justify="center", no_wrap=True)
+    table.add_column("ID", style="cyan", overflow="fold")
+    table.add_column("Description", overflow="fold")
+    for number, entry in enumerate(entries, 1):
+        marker = "✓" if entry.id in defaults else ""
+        table.add_row(str(number), marker, entry.id, entry.description)
+    console.print(table)
+    console.print(
+        "[muted]Use comma-separated numbers, ranges, or all. "
+        "Use :show N|ID to preview an option.[/muted]"
+    )
+
+    default_input = _catalog_selector_default_input(entries, defaults)
+    while True:
+        raw = Prompt.ask(str(selector["prompt"]), default=default_input).strip()
+        if raw.casefold() == ":show" or raw.casefold().startswith(":show "):
+            reference = raw[len(":show") :].strip()
+            entry = _wizard_entry_target(reference, entries, entries)
+            if not reference:
+                console.print(
+                    "[warning]Use `:show NUMBER`, `:show ID`, or `:show NAME`.[/warning]"
+                )
+            elif not entry:
+                console.print("[warning]That catalog option was not found.[/warning]")
+            else:
+                _preview_wizard_entry(entry)
+            continue
+        try:
+            indexes = _parse_number_selection(raw, len(entries))
+        except ValueError as exc:
+            console.print(f"[warning]{exc}[/warning]")
+            continue
+        if not multiple and len(indexes) != 1:
+            console.print("[warning]Select exactly one catalog for this set.[/warning]")
+            continue
+        if len(indexes) < minimum:
+            console.print(
+                f"[warning]Select at least {minimum} catalog(s) for this set.[/warning]"
+            )
+            continue
+
+        selected_ids = tuple(entries[index].id for index in indexes)
+        resolved: dict[str, object]
+        if len(selected_ids) == 1:
+            resolved = {"catalog": selected_ids[0]}
+        else:
+            resolved = {"catalogs": list(selected_ids)}
+        if "repeat" in spec:
+            resolved["repeat"] = spec["repeat"]
+        profile.sets_spec[set_name] = resolved
+        console.print(
+            f"[success]Selected for {set_name}:[/success] {', '.join(selected_ids)}"
+        )
+        return selected_ids
+
+
+def _choose_catalog_selectors(profile: Profile) -> None:
+    selector_names = [
+        name for name, spec in profile.sets_spec.items() if "catalog_selector" in spec
+    ]
+    for set_name in selector_names:
+        _select_catalog_selector(profile, set_name)
 
 
 def _wizard_entries(domain: str | None = None) -> list[CatalogEntry]:
@@ -1076,12 +1187,12 @@ def _parse_number_selection(value: str, maximum: int) -> list[int]:
             raise ValueError(f"Invalid selection: {token}")
         for number in numbers:
             if not 1 <= number <= maximum:
-                raise ValueError(f"Pattern number {number} is outside 1-{maximum}.")
+                raise ValueError(f"Number {number} is outside 1-{maximum}.")
             index = number - 1
             if index not in selected:
                 selected.append(index)
     if not selected:
-        raise ValueError("Select at least one pattern.")
+        raise ValueError("Select at least one item.")
     return selected
 
 
@@ -1211,6 +1322,210 @@ def _wizard() -> int:
     return _build(profile, output, force)
 
 
+def _choose_runtime_inputs(profile: Profile) -> None:
+    runtime_sets = [
+        (name, spec) for name, spec in profile.sets_spec.items() if "runtime_input" in spec
+    ]
+    for name, spec in runtime_sets:
+        selector = spec["runtime_input"]
+        methods = list(selector.get("methods", ["file", "custom"]))
+        console.print(f"\n[brand]{selector['prompt']}[/brand]")
+        labels = {
+            "file": "Read values from a local UTF-8 dictionary file",
+            "custom": "Paste values interactively",
+        }
+        for number, method in enumerate(methods, 1):
+            console.print(f"  [accent]{number}[/accent]  {labels[method]}")
+        selected_method = methods[
+            IntPrompt.ask(
+                "Choose an input method",
+                choices=[str(number) for number in range(1, len(methods) + 1)],
+                default=1,
+            )
+            - 1
+        ]
+        if selected_method == "file":
+            selected_file = None
+            while selected_file is None:
+                selected_file = _wizard_local_file("")
+            path, values = selected_file
+            resolved_spec: dict[str, object] = {"file": str(path)}
+            if "repeat" in spec:
+                resolved_spec["repeat"] = spec["repeat"]
+            profile.sets_spec[name] = resolved_spec
+            profile.runtime_files[name] = path
+            console.print(
+                f"[success]Selected for {name}:[/success] {path} "
+                f"[muted]({len(values):,} values)[/muted]"
+            )
+        else:
+            values = _custom_dictionary_values()
+            resolved_spec = {"inline": values}
+            if "repeat" in spec:
+                resolved_spec["repeat"] = spec["repeat"]
+            profile.sets_spec[name] = resolved_spec
+            console.print(
+                f"[success]Selected for {name}:[/success] "
+                f"[muted]{len(values):,} pasted values[/muted]"
+            )
+
+
+FILE_UPLOAD_PRESET_DETAILS = {
+    "common_web": (
+        "Common web sanitizers",
+        "controls, whitespace, special characters, repeated dots, basename, and case",
+    ),
+    "posix": (
+        "POSIX filesystem",
+        "slash and NUL handling plus POSIX basename variants",
+    ),
+    "windows": (
+        "Windows filesystem",
+        "invalid characters, reserved names, separators, and trailing dots/spaces",
+    ),
+    "unicode": (
+        "Unicode normalization",
+        "NFC, NFD, NFKC, NFKD, and accent-removal hypotheses",
+    ),
+    "extension_rewrite": (
+        "Known extension rewrites",
+        "replace or append one or more extensions you provide",
+    ),
+    "collision_suffixes": (
+        "Collision suffixes",
+        "bounded -N, _N, and (N) filename variants",
+    ),
+    "length_limit": (
+        "Filename length limit",
+        "UTF-8 byte truncation while preserving the final extension when possible",
+    ),
+}
+
+
+def _optional_number_selection(value: str, maximum: int) -> list[int]:
+    if value.strip().casefold() in {"none", "no", "0"}:
+        return []
+    return _parse_number_selection(value, maximum)
+
+
+def _prompt_extensions() -> list[str]:
+    while True:
+        raw = Prompt.ask(
+            "Known stored extensions (comma-separated, without paths)",
+            default="jpg",
+        )
+        extensions = list(
+            dict.fromkeys(
+                item.strip().lstrip(".") for item in raw.split(",") if item.strip().lstrip(".")
+            )
+        )
+        if extensions and all(
+            not any(separator in item for separator in "/\\") for item in extensions
+        ):
+            return extensions
+        console.print(
+            "[warning]Enter at least one extension name without path separators.[/warning]"
+        )
+
+
+def _prompt_bounded_integer(label: str, default: int, maximum: int) -> int:
+    while True:
+        value = IntPrompt.ask(label, default=default)
+        if 1 <= value <= maximum:
+            return value
+        console.print(f"[warning]Enter a number between 1 and {maximum}.[/warning]")
+
+
+def _configure_file_upload_request_paths(spec: dict[str, object]) -> None:
+    console.print("\n[brand]Filename interpretation[/brand]")
+    console.print(
+        "  [accent]1[/accent]  Stored filenames or object keys "
+        "[success](recommended)[/success]"
+    )
+    console.print(
+        "  [accent]2[/accent]  Upload-accepted client filenames "
+        "[warning](best effort)[/warning]"
+    )
+    source = ("stored", "accepted")[
+        IntPrompt.ask("What do the input lines represent?", choices=["1", "2"], default=1)
+        - 1
+    ]
+
+    console.print("\n[brand]Request target[/brand]")
+    targets = (
+        ("segment", "Single URL path segment"),
+        ("relative_path", "Relative URL path"),
+        ("object_key", "Object storage key"),
+    )
+    for number, (_, label) in enumerate(targets, 1):
+        console.print(f"  [accent]{number}[/accent]  {label}")
+    target = targets[
+        IntPrompt.ask("How is each value addressed?", choices=["1", "2", "3"], default=1)
+        - 1
+    ][0]
+
+    presets: list[str] = []
+    if source == "accepted":
+        console.print(
+            "\n[warning]The backend may replace the filename with a random value, hash, "
+            "or database ID. Those names cannot be inferred from the accepted filename.[/warning]"
+        )
+        table = Table(title="Storage-name hypotheses", header_style="bold bright_cyan")
+        table.add_column("#", justify="right", style="accent")
+        table.add_column("Preset", style="cyan")
+        table.add_column("Coverage")
+        for number, preset in enumerate(FILE_UPLOAD_STORAGE_PRESETS, 1):
+            label, description = FILE_UPLOAD_PRESET_DETAILS[preset]
+            table.add_row(str(number), label, description)
+        console.print(table)
+        console.print(
+            "[muted]Select comma-separated numbers, ranges, all, or none. "
+            "Sanitizer families branch as alternatives; selected filename modifiers are "
+            "layered within the per-input cap.[/muted]"
+        )
+        while True:
+            raw = Prompt.ask("Storage normalization presets", default="1")
+            try:
+                selected = _optional_number_selection(raw, len(FILE_UPLOAD_STORAGE_PRESETS))
+                presets = [FILE_UPLOAD_STORAGE_PRESETS[index] for index in selected]
+                break
+            except ValueError as exc:
+                console.print(f"[warning]{exc}[/warning]")
+
+    spec["source"] = source
+    spec["target"] = target
+    spec["presets"] = presets
+    spec["decode_depth"] = 2
+    spec["max_variants_per_input"] = 512 if source == "accepted" else 64
+    spec.pop("guided", None)
+    if "extension_rewrite" in presets:
+        spec["forced_extensions"] = _prompt_extensions()
+    else:
+        spec.pop("forced_extensions", None)
+    if "collision_suffixes" in presets:
+        spec["collision_suffix_limit"] = _prompt_bounded_integer(
+            "Highest collision suffix number",
+            3,
+            100,
+        )
+    else:
+        spec.pop("collision_suffix_limit", None)
+    if "length_limit" in presets:
+        spec["filename_max_bytes"] = _prompt_bounded_integer(
+            "Maximum filename length in UTF-8 bytes",
+            255,
+            4096,
+        )
+    else:
+        spec.pop("filename_max_bytes", None)
+
+
+def _choose_guided_transforms(profile: Profile) -> None:
+    for spec in profile.transforms:
+        if spec.get("name") == "file_upload_request_path_variants" and spec.get("guided"):
+            _configure_file_upload_request_paths(spec)
+
+
 def _guided() -> int:
     if not console.is_terminal:
         raise ComposerError(
@@ -1239,10 +1554,14 @@ def _guided() -> int:
     )
     profile = profiles[choice - 1]
 
+    _choose_runtime_inputs(profile)
+    _choose_guided_transforms(profile)
+
     console.print("\n[brand]Profile sets[/brand]")
     for name, spec in profile.sets_spec.items():
         console.print(f"  [success]•[/success] {name}: [muted]{_set_source(spec)}[/muted]")
     _choose_catalog_set(profile)
+    _choose_catalog_selectors(profile)
 
     estimate = estimate_profile(profile)
     _estimate_table(estimate)

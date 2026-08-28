@@ -1,0 +1,59 @@
+id: file_upload_handler_against_allowlist
+domain: file_upload
+description: Select one or more handler stacks and combine them with selected extension allowlists.
+
+sets:
+  base:
+    catalog: file_upload_filename_bases_common
+
+  dangerous:
+    catalog_selector:
+      prompt: Select one or more handler stacks
+      multiple: true
+      min_selections: 1
+      default:
+        - file_upload_php_handler_candidates
+      options:
+        - file_upload_php_handler_candidates
+        - file_upload_php_legacy_candidates
+        - file_upload_aspnet_handler_candidates
+        - file_upload_jsp_handler_candidates
+
+  allowed:
+    catalog_selector:
+      prompt: Select one or more extension allowlists
+      multiple: true
+      min_selections: 1
+      default:
+        - file_upload_allowed_image_extensions
+      options:
+        - file_upload_allowed_image_extensions
+        - file_upload_allowed_document_extensions
+        - file_upload_allowed_archive_extensions
+
+  sep:
+    catalog_selector:
+      prompt: Select one or more separator dictionaries
+      multiple: true
+      min_selections: 1
+      default:
+        - file_upload_filename_separators_basic
+        - file_upload_filename_separators_encoded
+      options:
+        - file_upload_filename_separators_basic
+        - file_upload_filename_separators_encoded
+        - file_upload_filename_all_separators
+
+patterns:
+  - "{base}{dangerous}{allowed}"
+  - "{base}{allowed}{dangerous}"
+  - "{base}{dangerous}{sep}{allowed}"
+  - "{base}{allowed}{sep}{dangerous}"
+
+filters:
+  dedupe: true
+  max_length: 120
+  max_outputs: 50000
+
+output:
+  file: output/file_upload_handler_against_allowlist.txt

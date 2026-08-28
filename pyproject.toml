@@ -47,6 +47,8 @@ include = ["web_dict_composer*"]
 "share/web-dict-composer/sets/lfi/suffixes" = ["sets/lfi/suffixes/*"]
 "share/web-dict-composer/profiles/file_upload" = ["profiles/file_upload/*.yml"]
 "share/web-dict-composer/profiles/lfi" = ["profiles/lfi/*.yml"]
+"share/web-dict-composer/docs/references" = ["docs/references/*.md"]
+"share/web-dict-composer/fixtures/file_upload/php" = ["fixtures/file_upload/php/*.php"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

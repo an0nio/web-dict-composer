@@ -18,6 +18,21 @@
   reviewed separator atoms derived from SecLists `LFI-Jhaddix.txt`.
 - Add bounded generated target matrices for `etc/passwd`, `Windows/win.ini`, and `index.php`
   separator/dot normalization fuzzing.
+- Catalog magic-number documentation, Kali webshell locations, and selected upstream webshell and
+  reverse-shell projects as searchable, non-composable references.
+- Add deterministic `catalog_selector` profile inputs with explicit options/defaults and
+  multi-selection plus pager previews in `guided`.
+- Add a generic File Upload handler-against-allowlist profile covering selectable PHP, ASP.NET,
+  JSP, image, document, archive, and separator sets.
+- Convert the existing multistack-images handler union into a selector while preserving all three
+  stacks as its non-interactive default.
+- Add a guided-only File Upload request-path profile with runtime file/paste input, explicit stored
+  versus accepted filename semantics, URL segment/path/object-key modes, bounded storage
+  sanitizer presets, and transform options recorded in the manifest.
+- Package minimal and path-diagnostic PHP execution markers whose stable `php_funciona` response
+  can be matched by ffuf, and catalog their documentation as a non-composable reference.
+- Add copy-paste `printf` commands for every documented magic-number signature and a minimal PHP
+  marker append example, while keeping complete polyglot construction out of scope.
 
 ## 0.3.0 — 2026-08-17
 

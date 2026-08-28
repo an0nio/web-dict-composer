@@ -14,6 +14,11 @@ debe revisarse cuando se actualiza una fuente registrada.
 | [OWASP Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal) | Formas de encoding y modelo de traversal | Fuente humana para revisar pasos y límites |
 | Documentación de Apache, PHP, Tomcat y Microsoft | Semántica de handlers, mappings y wrappers | Fuente primaria para justificar candidatos concretos |
 | [IANA Media Types](https://www.iana.org/assignments/media-types/media-types.xhtml) | Nombres MIME registrados | Contraste para sets MIME pequeños; no importar el registro completo |
+| [file magic database](https://github.com/file/file/tree/master/magic/Magdir) | Firmas y reglas de identificación de tipos de archivo | `reference`; no convertir bytes binarios en una wordlist textual |
+| [Kali webshells](https://www.kali.org/tools/webshells/) y [SecLists](https://www.kali.org/tools/seclists/) | Rutas de las colecciones empaquetadas en Kali | `reference`; documentar ubicaciones sin leer, copiar o ejecutar su contenido |
+| [SecLists Web-Shells](https://github.com/danielmiessler/SecLists/tree/master/Web-Shells) | Colección por lenguajes y CMS | `reference`; consulta manual únicamente |
+| [PentestMonkey PHP reverse shell](https://github.com/pentestmonkey/php-reverse-shell) | Implementación PHP independiente | `reference`; no descargar, copiar ni generar el código |
+| [phpbash](https://github.com/Arrexel/phpbash) | Webshell PHP semi-interactiva | `reference`; no descargar, copiar ni generar el código |
 
 ## SecLists
 
@@ -43,6 +48,13 @@ El wizard busca SecLists en rutas locales antes de pedir que se registre manualm
 SecLists ni asume que cualquier `.txt` sea componible. Para otras entradas `external_wordlist`, una
 URL directa puede descargarse tras confirmación; se rechaza HTML, se limita a 50 MiB, se exige texto
 UTF-8 y se conserva en la caché XDG. Las entradas `reference` nunca se descargan.
+
+Las firmas de archivos se mantienen como documentación humana porque algunas contienen NUL,
+saltos de línea o reglas dependientes del offset, incompatibles con un set de texto orientado a
+líneas. Las referencias de webshells y reverse shells solo facilitan encontrar fuentes conocidas:
+el catálogo no convierte código ejecutable en una wordlist ni accede a él automáticamente. Ambas
+categorías comparten la etiqueta `shell-resources`, pero conservan tags específicos para no
+confundir una webshell con una reverse shell.
 
 ## Criterios de un set local
 

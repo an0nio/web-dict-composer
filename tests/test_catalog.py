@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import re
 import unittest
 from dataclasses import fields
 from pathlib import Path
@@ -52,13 +54,159 @@ class CatalogTests(unittest.TestCase):
         self.assertNotIn("patt_upload_insecure_files", default_ids)
         self.assertIn("patt_upload_insecure_files", reference_ids)
 
+    def test_magic_number_and_shell_resources_are_reference_only(self) -> None:
+        reference_ids = {
+            "file_upload_magic_numbers_reference",
+            "file_magic_database_reference",
+            "file_upload_shell_resources_reference",
+            "file_upload_php_execution_markers_reference",
+            "seclists_web_shells_reference",
+            "pentestmonkey_php_reverse_shell_reference",
+            "phpbash_web_shell_reference",
+        }
+        for dictionary_id in reference_ids:
+            self.assertEqual(get_entry(dictionary_id).kind, "reference")
+
+        default_ids = {
+            entry.id for entry in search_catalog("file-upload magic numbers")
+        }
+        magic_reference_ids = {
+            entry.id
+            for entry in search_catalog(
+                "file-upload magic numbers", include_references=True
+            )
+        }
+        webshell_reference_ids = {
+            entry.id
+            for entry in search_catalog(
+                "file-upload webshells", include_references=True
+            )
+        }
+        reverse_shell_reference_ids = {
+            entry.id
+            for entry in search_catalog(
+                "file-upload revshells", include_references=True
+            )
+        }
+        all_shell_reference_ids = {
+            entry.id
+            for entry in search_catalog(
+                "file-upload shell-resources", include_references=True
+            )
+        }
+        self.assertFalse(default_ids & reference_ids)
+        self.assertIn("file_upload_magic_numbers_reference", magic_reference_ids)
+        self.assertIn("file_magic_database_reference", magic_reference_ids)
+        self.assertTrue(
+            {
+                "file_upload_shell_resources_reference",
+                "seclists_web_shells_reference",
+                "phpbash_web_shell_reference",
+            }.issubset(webshell_reference_ids)
+        )
+        self.assertTrue(
+            {
+                "file_upload_shell_resources_reference",
+                "pentestmonkey_php_reverse_shell_reference",
+            }.issubset(reverse_shell_reference_ids)
+        )
+        self.assertTrue(
+            {
+                "file_upload_shell_resources_reference",
+                "seclists_web_shells_reference",
+                "pentestmonkey_php_reverse_shell_reference",
+                "phpbash_web_shell_reference",
+            }.issubset(all_shell_reference_ids)
+        )
+
+    def test_magic_number_reference_has_exact_copy_paste_signature_commands(self) -> None:
+        resolved = resolve_entry(get_entry("file_upload_magic_numbers_reference"))
+        self.assertIsNotNone(resolved)
+        reference = Path(str(resolved)).read_text(encoding="utf-8")
+        commands = dict(
+            re.findall(r"^printf '([^']+)' > (signature-[^\n]+)$", reference, re.MULTILINE)
+        )
+        expected = {
+            "signature-jpeg.jpg": "FF D8 FF",
+            "signature-png.png": "89 50 4E 47 0D 0A 1A 0A",
+            "signature-gif87a.gif": "47 49 46 38 37 61",
+            "signature-gif89a.gif": "47 49 46 38 39 61",
+            "signature-pdf.pdf": "25 50 44 46 2D",
+            "signature-zip.zip": "50 4B 03 04",
+            "signature-gzip.gz": "1F 8B 08",
+            "signature-bmp.bmp": "42 4D",
+            "signature-tiff-le.tiff": "49 49 2A 00",
+            "signature-tiff-be.tiff": "4D 4D 00 2A",
+            "signature-webp.webp": "52 49 46 46 00 00 00 00 57 45 42 50",
+            "signature-ole.bin": "D0 CF 11 E0 A1 B1 1A E1",
+            "signature-elf.bin": "7F 45 4C 46",
+            "signature-pe.exe": "4D 5A",
+        }
+        self.assertEqual(set(commands.values()), set(expected))
+        for escaped, filename in commands.items():
+            actual = bytes(escaped, "ascii").decode("unicode_escape").encode("latin-1")
+            self.assertEqual(actual, bytes.fromhex(expected[filename]))
+
+        self.assertIn(
+            "cat -- fixtures/file_upload/php/php_execution_marker.php "
+            ">> signature-gif89a.gif",
+            reference,
+        )
+        for advanced in ("base64 --decode", "python3 - <<", "zlib.crc32", "tEXt"):
+            self.assertNotIn(advanced, reference)
+
     def test_local_path_and_reference_url_resolve(self) -> None:
         local = resolve_entry(get_entry("file_upload_php_handler_candidates"))
         reference = resolve_entry(get_entry("owasp_file_upload_testing"))
         self.assertTrue(local and local.endswith("extensions/php_handler_candidates.txt"))
         self.assertTrue(reference and reference.startswith("https://owasp.org/"))
 
-    def test_every_local_catalog_set_has_a_review_record(self) -> None:
+        for dictionary_id in (
+            "file_upload_magic_numbers_reference",
+            "file_upload_shell_resources_reference",
+            "file_upload_php_execution_markers_reference",
+        ):
+            resolved = resolve_entry(get_entry(dictionary_id))
+            self.assertTrue(resolved and Path(resolved).is_file())
+
+    def test_php_execution_markers_are_stable_non_composable_fixtures(self) -> None:
+        entry = get_entry("file_upload_php_execution_markers_reference")
+        self.assertEqual(entry.kind, "reference")
+
+        default_ids = {entry.id for entry in search_catalog("php marker ffuf")}
+        reference_ids = {
+            entry.id
+            for entry in search_catalog("php marker ffuf", include_references=True)
+        }
+        self.assertNotIn("file_upload_php_execution_markers_reference", default_ids)
+        self.assertIn("file_upload_php_execution_markers_reference", reference_ids)
+
+        root = Path(__file__).resolve().parents[1]
+        fixture_root = root / "fixtures" / "file_upload" / "php"
+        minimal = fixture_root / "php_execution_marker.php"
+        diagnostic = fixture_root / "php_execution_and_path_marker.php"
+        for fixture in (minimal, diagnostic):
+            source = fixture.read_text(encoding="utf-8")
+            self.assertNotIn("php_funciona", source)
+            encoded = re.search(r'base64_decode\("([A-Za-z0-9+/=]+)"\)', source)
+            self.assertIsNotNone(encoded)
+            self.assertEqual(
+                base64.b64decode(encoded.group(1)).decode("ascii"),
+                "php_funciona",
+            )
+
+        diagnostic_source = diagnostic.read_text(encoding="utf-8")
+        for label in (
+            "basename_hex=",
+            "file_hex=",
+            "realpath_hex=",
+            "script_filename_hex=",
+            "document_root_hex=",
+            "request_uri=",
+        ):
+            self.assertIn(label, diagnostic_source)
+
+    def test_every_local_catalog_resource_has_a_review_record(self) -> None:
         review_root = Path(__file__).resolve().parents[1] / "docs" / "set_reviews"
         reviewed = {path.stem for path in review_root.glob("*.md")}
         local_ids = {entry.id for entry in load_catalog() if entry.source == "local"}

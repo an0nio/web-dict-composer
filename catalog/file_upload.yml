@@ -196,3 +196,66 @@ entries:
     path: https://github.com/fuzzdb-project/fuzzdb/tree/master/attack/file-upload
     tags: [file-upload, payloads, fuzzdb, reference]
     description: Legacy attack primitives and composed values; not an atom source.
+
+  - id: file_upload_magic_numbers_reference
+    name: Common file-upload magic numbers
+    domain: file_upload
+    kind: reference
+    source: local
+    path: docs/references/file_upload_magic_numbers.md
+    tags: [file-upload, magic-numbers, file-signatures, signatures, mime-sniffing, validation, commands, recipes, reference]
+    description: Human-readable signature table, copy-paste commands for signature stubs, and validation caveats.
+
+  - id: file_magic_database_reference
+    name: file magic database
+    domain: file_upload
+    kind: reference
+    source: file-project
+    path: https://github.com/file/file/tree/master/magic/Magdir
+    tags: [file-upload, magic-numbers, file-signatures, signatures, file-command, reference]
+    description: Upstream magic database used by the file command for detailed file-type identification.
+
+  - id: file_upload_shell_resources_reference
+    name: Webshell and reverse-shell resources
+    domain: file_upload
+    kind: reference
+    source: local
+    path: docs/references/file_upload_shell_resources.md
+    tags: [file-upload, webshell, webshells, reverse-shell, reverse-shells, revshell, revshells, shell-resources, kali, locations, reference]
+    description: Human guide to Kali webshell locations and selected webshell/reverse-shell projects; never a generation input.
+
+  - id: file_upload_php_execution_markers_reference
+    name: PHP execution markers for upload verification
+    domain: file_upload
+    kind: reference
+    source: local
+    path: docs/references/file_upload_php_execution_markers.md
+    tags: [file-upload, php, marker, markers, execution, verification, ffuf, path-diagnostics, reference]
+    description: Packaged PHP fixtures for confirming server-side execution and optionally inspecting resolved paths; never a generation input.
+
+  - id: seclists_web_shells_reference
+    name: SecLists Web-Shells collection
+    domain: file_upload
+    kind: reference
+    source: seclists
+    path: https://github.com/danielmiessler/SecLists/tree/master/Web-Shells
+    tags: [file-upload, webshell, webshells, shell-resources, php, jsp, cfm, cms, seclists, payloads, reference]
+    description: Multi-language and CMS-oriented webshell collection for deliberate manual consultation.
+
+  - id: pentestmonkey_php_reverse_shell_reference
+    name: PentestMonkey PHP reverse shell
+    domain: file_upload
+    kind: reference
+    source: pentestmonkey
+    path: https://github.com/pentestmonkey/php-reverse-shell
+    tags: [file-upload, php, reverse-shell, reverse-shells, revshell, revshells, shell-resources, payloads, reference]
+    description: Standalone PHP reverse-shell project retained as a manual reference only.
+
+  - id: phpbash_web_shell_reference
+    name: phpbash web shell
+    domain: file_upload
+    kind: reference
+    source: phpbash
+    path: https://github.com/Arrexel/phpbash
+    tags: [file-upload, php, webshell, webshells, shell-resources, interactive-shell, payloads, reference]
+    description: Semi-interactive PHP webshell project retained as a manual reference only.

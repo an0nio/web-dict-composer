@@ -16,10 +16,27 @@ from web_dict_composer.catalog.service import (
 from web_dict_composer.core.errors import ComposerError, ProfileError
 from web_dict_composer.core.resources import resolve_profile, resolve_resource
 from web_dict_composer.sources.external import cached_external_wordlist
-from web_dict_composer.transforms.library import TRANSFORMS
+from web_dict_composer.transforms.library import validate_transform_spec
 
 
 PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+SET_INPUT_KEYS = (
+    "inline",
+    "file",
+    "catalog",
+    "catalogs",
+    "catalog_selector",
+    "runtime_input",
+)
+CATALOG_SELECTOR_FIELDS = {
+    "prompt",
+    "multiple",
+    "min_selections",
+    "default",
+    "options",
+}
+RUNTIME_INPUT_FIELDS = {"prompt", "methods"}
+RUNTIME_INPUT_METHODS = {"file", "custom"}
 
 
 @dataclass(frozen=True)
@@ -46,6 +63,7 @@ class Profile:
     filters: dict[str, Any] = field(default_factory=dict)
     output: dict[str, Any] = field(default_factory=dict)
     runtime_files: dict[str, Path] = field(default_factory=dict, repr=False)
+
 
 def _normalize_transforms(raw: Any) -> list[dict[str, Any]]:
     if raw is None:
@@ -129,6 +147,147 @@ def _validate_catalog_reference(
     return errors
 
 
+def catalog_selector_ids(spec: dict[str, Any], key: str) -> tuple[str, ...]:
+    """Return validated selector IDs for display or default profile resolution."""
+    selector = spec.get("catalog_selector")
+    if not isinstance(selector, dict):
+        return ()
+    values = selector.get(key)
+    if not isinstance(values, list):
+        return ()
+    return tuple(str(value) for value in values if isinstance(value, str) and value)
+
+
+def _validate_catalog_selector(
+    selector: Any,
+    profile: Profile,
+    set_name: str,
+) -> list[str]:
+    if not isinstance(selector, dict):
+        return [f"Set '{set_name}'.catalog_selector must be a mapping."]
+
+    errors: list[str] = []
+    unsupported = sorted(set(selector) - CATALOG_SELECTOR_FIELDS)
+    if unsupported:
+        errors.append(
+            f"Set '{set_name}'.catalog_selector uses unsupported fields: "
+            f"{', '.join(unsupported)}"
+        )
+
+    prompt = selector.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        errors.append(f"Set '{set_name}'.catalog_selector.prompt must be a non-empty string.")
+
+    multiple = selector.get("multiple")
+    if not isinstance(multiple, bool):
+        errors.append(f"Set '{set_name}'.catalog_selector.multiple must be true or false.")
+
+    minimum = selector.get("min_selections", 1)
+    if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum <= 0:
+        errors.append(
+            f"Set '{set_name}'.catalog_selector.min_selections must be a positive integer."
+        )
+
+    options = selector.get("options")
+    valid_options = (
+        isinstance(options, list)
+        and bool(options)
+        and all(isinstance(item, str) and item for item in options)
+    )
+    if not valid_options:
+        errors.append(
+            f"Set '{set_name}'.catalog_selector.options must be a non-empty list of IDs."
+        )
+        option_ids: tuple[str, ...] = ()
+    else:
+        option_ids = tuple(options)
+        if len(option_ids) != len(set(option_ids)):
+            errors.append(
+                f"Set '{set_name}'.catalog_selector.options must not contain duplicate IDs."
+            )
+        for dictionary_id in dict.fromkeys(option_ids):
+            errors.extend(_validate_catalog_reference(dictionary_id, profile, set_name))
+
+    defaults = selector.get("default")
+    valid_defaults = (
+        isinstance(defaults, list)
+        and bool(defaults)
+        and all(isinstance(item, str) and item for item in defaults)
+    )
+    if not valid_defaults:
+        errors.append(
+            f"Set '{set_name}'.catalog_selector.default must be a non-empty list of IDs."
+        )
+        default_ids: tuple[str, ...] = ()
+    else:
+        default_ids = tuple(defaults)
+        if len(default_ids) != len(set(default_ids)):
+            errors.append(
+                f"Set '{set_name}'.catalog_selector.default must not contain duplicate IDs."
+            )
+
+    if option_ids and default_ids:
+        unknown_defaults = [item for item in default_ids if item not in option_ids]
+        if unknown_defaults:
+            errors.append(
+                f"Set '{set_name}'.catalog_selector.default contains IDs outside options: "
+                f"{', '.join(unknown_defaults)}"
+            )
+        if isinstance(minimum, int) and not isinstance(minimum, bool):
+            if minimum > len(option_ids):
+                errors.append(
+                    f"Set '{set_name}'.catalog_selector.min_selections exceeds its options."
+                )
+            if len(default_ids) < minimum:
+                errors.append(
+                    f"Set '{set_name}'.catalog_selector.default must contain at least "
+                    f"{minimum} selection(s)."
+                )
+
+    if multiple is False:
+        if minimum != 1:
+            errors.append(
+                f"Set '{set_name}'.catalog_selector.min_selections must be 1 when "
+                "multiple is false."
+            )
+        if len(default_ids) != 1:
+            errors.append(
+                f"Set '{set_name}'.catalog_selector.default must contain exactly one ID "
+                "when multiple is false."
+            )
+    return errors
+
+
+def _validate_runtime_input(value: Any, set_name: str) -> list[str]:
+    if not isinstance(value, dict):
+        return [f"Set '{set_name}'.runtime_input must be a mapping."]
+    errors: list[str] = []
+    unsupported = sorted(set(value) - RUNTIME_INPUT_FIELDS)
+    if unsupported:
+        errors.append(
+            f"Set '{set_name}'.runtime_input uses unsupported fields: "
+            f"{', '.join(unsupported)}"
+        )
+    prompt = value.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        errors.append(f"Set '{set_name}'.runtime_input.prompt must be a non-empty string.")
+    methods = value.get("methods", ["file", "custom"])
+    if (
+        not isinstance(methods, list)
+        or not methods
+        or not all(
+            isinstance(method, str) and method in RUNTIME_INPUT_METHODS
+            for method in methods
+        )
+    ):
+        errors.append(
+            f"Set '{set_name}'.runtime_input.methods must contain file and/or custom."
+        )
+    elif len(methods) != len(set(methods)):
+        errors.append(f"Set '{set_name}'.runtime_input.methods must not contain duplicates.")
+    return errors
+
+
 def validate_profile(profile: Profile) -> list[str]:
     errors: list[str] = []
     if not profile.id or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", profile.id):
@@ -149,15 +308,16 @@ def validate_profile(profile: Profile) -> list[str]:
         if not isinstance(spec, dict):
             errors.append(f"Set '{name}' must be a mapping.")
             continue
-        unsupported = sorted(set(spec) - {"inline", "file", "catalog", "catalogs", "repeat"})
+        unsupported = sorted(set(spec) - {*SET_INPUT_KEYS, "repeat"})
         if unsupported:
             errors.append(
                 f"Set '{name}' uses unsupported fields: {', '.join(unsupported)}"
             )
-        choices = [key for key in ("inline", "file", "catalog", "catalogs") if key in spec]
+        choices = [key for key in SET_INPUT_KEYS if key in spec]
         if len(choices) != 1:
             errors.append(
-                f"Set '{name}' must define exactly one of inline, file, catalog, or catalogs."
+                f"Set '{name}' must define exactly one of inline, file, catalog, catalogs, "
+                "catalog_selector, or runtime_input."
             )
         elif "inline" in spec and (
             not isinstance(spec["inline"], list)
@@ -190,6 +350,12 @@ def validate_profile(profile: Profile) -> list[str]:
                     errors.extend(
                         _validate_catalog_reference(dictionary_id, profile, str(name))
                     )
+        elif "catalog_selector" in spec:
+            errors.extend(
+                _validate_catalog_selector(spec["catalog_selector"], profile, str(name))
+            )
+        elif "runtime_input" in spec:
+            errors.extend(_validate_runtime_input(spec["runtime_input"], str(name)))
         if "repeat" in spec:
             repeat = spec["repeat"]
             if not isinstance(repeat, dict):
@@ -221,21 +387,14 @@ def validate_profile(profile: Profile) -> list[str]:
             )
 
     for transform in profile.transforms:
-        name = transform.get("name")
-        if name not in TRANSFORMS:
-            errors.append(f"Unknown transform: {name!r}")
-        if name == "repeat":
-            minimum = transform.get("min", 1)
-            maximum = transform.get("max")
-            if (
-                not isinstance(minimum, int)
-                or isinstance(minimum, bool)
-                or not isinstance(maximum, int)
-                or isinstance(maximum, bool)
-                or minimum <= 0
-                or maximum < minimum
-            ):
-                errors.append("repeat transform requires positive integer min/max with min <= max.")
+        errors.extend(validate_transform_spec(transform))
+        if (
+            transform.get("name") == "file_upload_request_path_variants"
+            and profile.domain != "file_upload"
+        ):
+            errors.append(
+                "file_upload_request_path_variants can only be used by file_upload profiles."
+            )
 
     filters = profile.filters
     unsupported_filters = sorted(set(filters) - {"dedupe", "max_length", "max_outputs"})
@@ -336,11 +495,23 @@ def load_sets(profile: Profile) -> dict[str, LoadedSet]:
             )
             continue
 
-        catalog_ids = (
-            (str(spec["catalog"]),)
-            if "catalog" in spec
-            else tuple(str(item) for item in spec["catalogs"])
-        )
+        if "catalog" in spec:
+            catalog_ids = (str(spec["catalog"]),)
+        elif "catalogs" in spec:
+            catalog_ids = tuple(str(item) for item in spec["catalogs"])
+        elif "catalog_selector" in spec:
+            catalog_ids = catalog_selector_ids(spec, "default")
+        else:
+            runtime_input = spec.get("runtime_input")
+            prompt = (
+                runtime_input.get("prompt")
+                if isinstance(runtime_input, dict)
+                else f"Provide values for {name}"
+            )
+            raise ProfileError(
+                f"Profile '{profile.id}' requires guided runtime input for set '{name}': "
+                f"{prompt}. Run `web-dict-composer guided`."
+            )
         combined: list[str] = []
         for dictionary_id in catalog_ids:
             entry = get_entry(dictionary_id)

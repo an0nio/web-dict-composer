@@ -10,14 +10,18 @@ from unittest.mock import patch
 
 from web_dict_composer.catalog.service import get_entry
 from web_dict_composer.cli.app import (
+    _choose_runtime_inputs,
+    _configure_file_upload_request_paths,
     _filter_catalog_entries,
     _interactive_catalog_search,
+    _optional_number_selection,
     _parse_number_selection,
     _pattern_options,
     _prepare_wizard_entry,
     _preview_wizard_entry,
     _remaining_tags,
     _replacement_candidates,
+    _select_catalog_selector,
     _wizard_entry_target,
     _wizard_entries,
     console,
@@ -119,6 +123,86 @@ class CliTests(unittest.TestCase):
         )
         self.assertNotIn("file_upload_filename_bases_common", allowed)
 
+    def test_guided_catalog_selector_accepts_multiple_entries_and_preview(self) -> None:
+        profile = load_profile("file_upload/handler_against_allowlist")
+        with patch(
+            "web_dict_composer.cli.app.Prompt.ask",
+            side_effect=[":show 2", "1,3"],
+        ), patch(
+            "web_dict_composer.cli.app._preview_wizard_entry",
+            return_value=True,
+        ) as preview:
+            with console.capture() as capture:
+                selected = _select_catalog_selector(profile, "dangerous")
+
+        self.assertEqual(
+            selected,
+            (
+                "file_upload_php_handler_candidates",
+                "file_upload_aspnet_handler_candidates",
+            ),
+        )
+        self.assertEqual(
+            profile.sets_spec["dangerous"],
+            {
+                "catalogs": [
+                    "file_upload_php_handler_candidates",
+                    "file_upload_aspnet_handler_candidates",
+                ]
+            },
+        )
+        preview.assert_called_once_with(get_entry("file_upload_php_legacy_candidates"))
+        self.assertIn("Selected for dangerous", capture.get())
+
+    def test_guided_request_path_transform_resolves_best_effort_options(self) -> None:
+        spec: dict[str, object] = {
+            "name": "file_upload_request_path_variants",
+            "guided": True,
+        }
+        with patch(
+            "web_dict_composer.cli.app.IntPrompt.ask",
+            side_effect=[2, 1, 3, 255],
+        ), patch(
+            "web_dict_composer.cli.app.Prompt.ask",
+            side_effect=["1,3,5-7", "jpg, webp"],
+        ):
+            with console.capture():
+                _configure_file_upload_request_paths(spec)
+
+        self.assertEqual(spec["source"], "accepted")
+        self.assertEqual(spec["target"], "segment")
+        self.assertEqual(
+            spec["presets"],
+            [
+                "common_web",
+                "windows",
+                "extension_rewrite",
+                "collision_suffixes",
+                "length_limit",
+            ],
+        )
+        self.assertEqual(spec["forced_extensions"], ["jpg", "webp"])
+        self.assertEqual(spec["collision_suffix_limit"], 3)
+        self.assertEqual(spec["filename_max_bytes"], 255)
+        self.assertNotIn("guided", spec)
+        self.assertEqual(_optional_number_selection("none", 7), [])
+
+    def test_guided_runtime_input_can_resolve_a_local_dictionary(self) -> None:
+        profile = load_profile("file_upload/request_path_variants")
+        dictionary = Path("/tmp/accepted-filenames.txt")
+        with patch(
+            "web_dict_composer.cli.app.IntPrompt.ask",
+            return_value=1,
+        ), patch(
+            "web_dict_composer.cli.app._wizard_local_file",
+            return_value=(dictionary, ("shell.php.jpg",)),
+        ):
+            with console.capture():
+                _choose_runtime_inputs(profile)
+
+        self.assertEqual(profile.runtime_files["filename"], dictionary)
+        self.assertEqual(profile.sets_spec["filename"], {"file": str(dictionary)})
+
     def test_wizard_filters_dictionaries_by_accumulated_terms(self) -> None:
         entries = _wizard_entries()
         matches = _filter_catalog_entries(
@@ -143,6 +227,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("seclists_web_all_content_types", ids)
         self.assertNotIn("reference", kinds)
         self.assertNotIn("owasp_file_upload_testing", ids)
+        self.assertNotIn("file_upload_php_execution_markers_reference", ids)
 
     def test_wizard_finds_unregistered_seclists_when_external_is_selected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

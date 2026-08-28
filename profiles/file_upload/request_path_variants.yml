@@ -1,0 +1,31 @@
+id: file_upload_request_path_variants
+domain: file_upload
+description: Generate request-path variants from stored names or best-effort storage hypotheses from upload-accepted filenames.
+
+sets:
+  filename:
+    runtime_input:
+      prompt: Select the filenames or object keys to expand
+      methods:
+        - file
+        - custom
+
+patterns:
+  - "{filename}"
+
+transforms:
+  - name: file_upload_request_path_variants
+    guided: true
+    source: stored
+    target: segment
+    decode_depth: 2
+    presets: []
+    max_variants_per_input: 64
+
+filters:
+  dedupe: true
+  max_length: 2048
+  max_outputs: 50000
+
+output:
+  file: output/file_upload_request_path_variants.txt

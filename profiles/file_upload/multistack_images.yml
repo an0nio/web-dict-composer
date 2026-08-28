@@ -1,15 +1,23 @@
 id: file_upload_multistack_images
 domain: file_upload
-description: Compose a bounded PHP, ASP.NET, and JSP filename set with image allowlists.
+description: Select one or more PHP, ASP.NET, or JSP stacks and combine them with image allowlists.
 
 sets:
   base:
     inline: [shell, avatar]
   dangerous:
-    catalogs:
-      - file_upload_php_handler_candidates
-      - file_upload_aspnet_handler_candidates
-      - file_upload_jsp_handler_candidates
+    catalog_selector:
+      prompt: Select one or more handler stacks
+      multiple: true
+      min_selections: 1
+      default:
+        - file_upload_php_handler_candidates
+        - file_upload_aspnet_handler_candidates
+        - file_upload_jsp_handler_candidates
+      options:
+        - file_upload_php_handler_candidates
+        - file_upload_aspnet_handler_candidates
+        - file_upload_jsp_handler_candidates
   allowed:
     catalog: file_upload_allowed_image_extensions
   sep:

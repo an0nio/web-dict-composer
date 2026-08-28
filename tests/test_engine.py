@@ -20,11 +20,13 @@ from web_dict_composer.sources.manager import add_source
 class EngineTests(unittest.TestCase):
     def test_every_active_profile_validates_and_stays_bounded(self) -> None:
         paths = profile_files()
-        self.assertEqual(len(paths), 10)
+        self.assertEqual(len(paths), 12)
         domains = set()
         for path in paths:
             profile = load_profile(path)
             domains.add(profile.domain)
+            if any("runtime_input" in spec for spec in profile.sets_spec.values()):
+                continue
             estimate = estimate_profile(profile)
             self.assertGreater(estimate.raw_combinations, 0, profile.id)
             self.assertLessEqual(estimate.expanded_upper_bound, estimate.max_outputs, profile.id)
@@ -32,6 +34,34 @@ class EngineTests(unittest.TestCase):
             self.assertTrue(result.values, profile.id)
             self.assertFalse(result.truncated, profile.id)
         self.assertEqual(domains, {"file_upload", "lfi"})
+
+    def test_runtime_input_profile_requires_guided_values_then_composes(self) -> None:
+        profile = load_profile("file_upload/request_path_variants")
+        with self.assertRaisesRegex(ProfileError, "requires guided runtime input"):
+            estimate_profile(profile)
+
+        profile.sets_spec["filename"] = {
+            "inline": ["shell.jpg%00.phar", "uploads/avatar name.php"]
+        }
+        profile.transforms[0].update(
+            {
+                "source": "stored",
+                "target": "segment",
+                "max_variants_per_input": 64,
+            }
+        )
+        profile.transforms[0].pop("guided")
+        result = compose(profile)
+        self.assertIn("shell.jpg%2500.phar", result.values)
+        self.assertIn("uploads%2Favatar%20name.php", result.values)
+        with tempfile.TemporaryDirectory() as temporary:
+            artifacts = build_artifacts(
+                profile,
+                output_override=Path(temporary) / "requests.txt",
+            )
+            manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["transforms"][0]["source"], "stored")
+        self.assertEqual(manifest["transforms"][0]["target"], "segment")
 
     def test_quick_profile_has_deterministic_estimate_and_output(self) -> None:
         profile = load_profile("file_upload/php_jpg_quick")
@@ -41,6 +71,53 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(len(result.values), 210)
         self.assertEqual(result.values[0], "shell.php.jpg")
         self.assertIn("shell.php%00.jpg", result.values)
+
+    def test_catalog_selector_defaults_are_deterministic_and_recorded(self) -> None:
+        profile = load_profile("file_upload/handler_against_allowlist")
+        estimate = estimate_profile(profile)
+        self.assertEqual(estimate.raw_combinations, 3300)
+        self.assertEqual(estimate.set_counts["dangerous"], 5)
+        self.assertEqual(estimate.set_counts["allowed"], 6)
+        self.assertEqual(estimate.set_counts["sep"], 10)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            artifacts = build_artifacts(
+                profile,
+                output_override=Path(temporary) / "handlers.txt",
+            )
+            manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+        self.assertEqual(
+            manifest["sets"]["dangerous"],
+            "file_upload_php_handler_candidates",
+        )
+        self.assertEqual(
+            manifest["sets"]["sep"],
+            [
+                "file_upload_filename_separators_basic",
+                "file_upload_filename_separators_encoded",
+            ],
+        )
+
+        multistack = load_profile("file_upload/multistack_images")
+        self.assertEqual(
+            multistack.sets_spec["dangerous"]["catalog_selector"]["default"],
+            [
+                "file_upload_php_handler_candidates",
+                "file_upload_aspnet_handler_candidates",
+                "file_upload_jsp_handler_candidates",
+            ],
+        )
+
+        all_options = load_profile("file_upload/handler_against_allowlist")
+        for set_name in ("dangerous", "allowed", "sep"):
+            selector = all_options.sets_spec[set_name]["catalog_selector"]
+            all_options.sets_spec[set_name] = {"catalogs": selector["options"]}
+        all_estimate = estimate_profile(all_options)
+        self.assertEqual(all_estimate.raw_combinations, 43200)
+        self.assertLessEqual(
+            all_estimate.expanded_upper_bound,
+            all_estimate.max_outputs,
+        )
 
     def test_traversal_prefix_profile_repeats_atomic_steps(self) -> None:
         profile = load_profile("lfi/traversal_prefixes_1_8")
@@ -63,8 +140,10 @@ class EngineTests(unittest.TestCase):
             )
             manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
             self.assertEqual(manifest["profile"], "lfi_php_filter_source")
+            self.assertEqual(manifest["schema_version"], 2)
             self.assertEqual(manifest["domain"], "lfi")
             self.assertEqual(manifest["sets"]["wrapper"], "lfi_php_filter_readonly")
+            self.assertEqual(manifest["transforms"], [])
             self.assertEqual(manifest["output_lines"], artifacts.lines)
             self.assertFalse(manifest["truncated"])
 
@@ -202,6 +281,30 @@ class EngineTests(unittest.TestCase):
             }
             path.write_text(yaml.safe_dump(data), encoding="utf-8")
             with self.assertRaisesRegex(ProfileError, "unsupported fields"):
+                load_profile(path)
+
+    def test_catalog_selector_rejects_defaults_outside_its_options(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "invalid-selector.yml"
+            data = {
+                "id": "invalid_selector",
+                "domain": "file_upload",
+                "description": "Invalid selector on purpose.",
+                "sets": {
+                    "dangerous": {
+                        "catalog_selector": {
+                            "prompt": "Select handlers",
+                            "multiple": True,
+                            "min_selections": 1,
+                            "default": ["file_upload_jsp_handler_candidates"],
+                            "options": ["file_upload_php_handler_candidates"],
+                        }
+                    }
+                },
+                "patterns": ["{dangerous}"],
+            }
+            path.write_text(yaml.safe_dump(data), encoding="utf-8")
+            with self.assertRaisesRegex(ProfileError, "outside options"):
                 load_profile(path)
 
 

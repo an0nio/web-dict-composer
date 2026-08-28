@@ -53,10 +53,11 @@ def _set_reference(item: LoadedSet) -> str | list[str]:
 
 def _manifest(profile: Profile, result: Composition) -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "profile": profile.id,
         "domain": profile.domain,
         "sets": {name: _set_reference(item) for name, item in result.sets.items()},
+        "transforms": profile.transforms,
         "pattern_count": len(profile.patterns),
         "candidate_lines": result.accepted_before_dedupe,
         "output_lines": len(result.values),
